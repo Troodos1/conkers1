@@ -1,0 +1,1113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Conkers Duel — Skill Prototype</title>
+<style>
+  :root{
+    --bg:#241710;
+    --bg2:#1a0f0a;
+    --surface:#321f14;
+    --twine:#b89b6e;
+    --scar:#e8d5a8;
+    --ember:#f2a03d;
+    --ember-hot:#ffce7a;
+    --shell-a:#8a4a22;
+    --shell-b:#4a2410;
+    --text:#ede0ce;
+    --muted:#a98e72;
+    --crack:#0d0805;
+    --gold:#ffd27a;
+    --bad:#c25a3a;
+    --display:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,'Times New Roman',serif;
+    --ui:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden}
+  body{
+    background:radial-gradient(120% 90% at 50% 0%, #2e1d12 0%, var(--bg) 45%, var(--bg2) 100%);
+    color:var(--text);font-family:var(--ui);
+    display:flex;align-items:center;justify-content:center;
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
+  }
+  #wrap{position:relative;width:min(100vw,720px);height:min(100vh,860px);
+    display:flex;flex-direction:column}
+  /* ---- Top HUD ---- */
+  #hud{position:relative;z-index:5;padding:14px 16px 6px;display:flex;flex-direction:column;gap:10px}
+  .title{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+  .title h1{font-family:var(--display);font-weight:900;font-size:clamp(22px,6vw,30px);
+    letter-spacing:-.02em;line-height:1}
+  .title h1 em{font-style:italic;color:var(--ember)}
+  .title .tag{font-size:11px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase}
+  .bars{display:flex;gap:12px}
+  .fighter{flex:1;min-width:0}
+  .fighter .row{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:4px}
+  .fighter .name{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fighter .sixer{font-family:var(--display);font-weight:700;font-size:13px;color:var(--gold)}
+  .hpbar{height:9px;border-radius:6px;background:#1c110a;overflow:hidden;
+    box-shadow:inset 0 1px 2px rgba(0,0,0,.6)}
+  .hpfill{height:100%;width:100%;border-radius:6px;transition:width .35s cubic-bezier(.3,.9,.3,1)}
+  .hp-you{background:linear-gradient(90deg,#7bd389,#46a35a)}
+  .hp-foe{background:linear-gradient(90deg,#e88a4a,#c25a3a)}
+  /* ---- Canvas ---- */
+  #stage{flex:1;position:relative;min-height:0}
+  canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+  /* ---- Bottom HUD ---- */
+  #foot{position:relative;z-index:5;padding:8px 16px 16px;display:flex;flex-direction:column;gap:10px}
+  #coach{font-size:12.5px;color:var(--muted);min-height:18px;text-align:center;line-height:1.35}
+  #coach b{color:var(--ember-hot);font-weight:700}
+  .controls{display:flex;gap:8px;align-items:center}
+  .taunt-wrap{flex:1;position:relative}
+  select{width:100%;appearance:none;background:var(--surface);color:var(--text);
+    font-family:var(--ui);font-size:12px;border:1px solid rgba(184,155,110,.25);
+    border-radius:9px;padding:9px 30px 9px 11px;cursor:pointer}
+  .taunt-wrap::after{content:"▾";position:absolute;right:11px;top:50%;transform:translateY(-50%);
+    color:var(--muted);pointer-events:none;font-size:11px}
+  button{font-family:var(--ui);font-weight:700;font-size:13px;letter-spacing:.02em;
+    border:none;border-radius:9px;padding:10px 16px;cursor:pointer;white-space:nowrap;
+    background:var(--ember);color:#2a1608;transition:transform .08s, filter .2s}
+  button:hover{filter:brightness(1.06)}
+  button:active{transform:translateY(1px)}
+  button.ghost{background:transparent;color:var(--muted);border:1px solid rgba(184,155,110,.3)}
+  /* ---- Overlay ---- */
+  #over{position:absolute;inset:0;z-index:20;display:none;flex-direction:column;
+    align-items:center;justify-content:center;gap:14px;text-align:center;padding:24px;
+    background:rgba(12,7,4,.82);backdrop-filter:blur(3px)}
+  #over.show{display:flex;animation:fade .3s ease}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  #over .verdict{font-family:var(--display);font-weight:900;font-size:clamp(34px,11vw,58px);
+    line-height:.95;letter-spacing:-.02em}
+  #over .win{color:var(--gold)}
+  #over .lose{color:var(--bad)}
+  #over .taunt{font-family:var(--display);font-style:italic;font-size:clamp(17px,4.6vw,22px);
+    color:var(--text);max-width:30ch}
+  #over .sub{font-size:13px;color:var(--muted);max-width:34ch;line-height:1.5}
+  .hint{font-size:11px;color:var(--muted);text-align:center;letter-spacing:.02em}
+  #toast{position:absolute;left:50%;top:82%;transform:translate(-50%,-8px);z-index:16;
+    pointer-events:none;opacity:0;transition:opacity .28s ease, transform .28s ease;
+    width:max-content;max-width:30ch}
+  #toast.show{opacity:1;transform:translate(-50%,0)}
+  .toast-inner{background:rgba(28,16,10,.9);border:1px solid rgba(184,155,110,.3);border-radius:14px;
+    padding:11px 16px;text-align:center;box-shadow:0 14px 30px rgba(0,0,0,.5)}
+  .t-main{font-family:var(--display);font-size:16px;font-weight:700;color:var(--ember-hot);line-height:1.25}
+  .t-main b{color:var(--gold)}
+  .t-quip{font-family:var(--display);font-style:italic;font-size:12.5px;color:var(--muted);margin-top:4px}
+  #settings{position:absolute;inset:0;z-index:22;display:none;align-items:center;justify-content:center;
+    padding:18px;background:rgba(12,7,4,.85);backdrop-filter:blur(3px)}
+  #settings.show{display:flex}
+  .set-card{background:linear-gradient(180deg,#3a2417,#281710);border:1px solid rgba(184,155,110,.3);
+    border-radius:16px;padding:18px;max-width:36ch;width:100%;box-shadow:0 18px 40px rgba(0,0,0,.5)}
+  .set-card h3{font-family:var(--display);font-size:20px;font-weight:700}
+  .setsub{font-size:11px;color:var(--muted);margin:4px 0 14px;line-height:1.4}
+  .set-row{margin-bottom:14px}
+  .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px}
+  .seg{display:flex;gap:6px}
+  .seg button{flex:1;background:var(--surface);border:1px solid rgba(184,155,110,.25);color:var(--text);
+    padding:9px 6px;border-radius:9px;font-size:12px}
+  .seg button.on{background:var(--ember);color:#2a1608;border-color:var(--ember)}
+  .statrow{font-size:12.5px;display:flex;justify-content:space-between;padding:3px 0}
+  .statrow .ok{color:#7bd389}.statrow .no{color:var(--bad)}
+  #stAccel.ok,#stGyro.ok{color:#7bd389}
+  .toggle{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px}
+  .toggle.disabled{opacity:.4;pointer-events:none}
+  #gyroToggle.on{background:var(--ember);color:#2a1608}
+  .note{font-size:10.5px;color:var(--muted);margin-top:6px;line-height:1.4}
+  input[type=range]{width:100%;accent-color:var(--ember)}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="hud">
+    <div class="title">
+      <h1>Conkers <em>Duel</em></h1>
+      <span class="tag">skill prototype</span>
+    </div>
+    <div class="bars">
+      <div class="fighter">
+        <div class="row"><span class="name">Your conker</span><span class="sixer" id="youSixer">a one-er</span></div>
+        <div class="hpbar"><div class="hpfill hp-you" id="youHp"></div></div>
+      </div>
+      <div class="fighter">
+        <div class="row"><span class="name" id="foeName">Old Knobbly</span><span class="sixer" id="foeSixer">a three-er</span></div>
+        <div class="hpbar"><div class="hpfill hp-foe" id="foeHp"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="over">
+      <div class="verdict" id="verdict"></div>
+      <div class="taunt" id="tauntLine"></div>
+      <div class="sub" id="overSub"></div>
+      <button id="again">New challenger</button>
+    </div>
+    <div id="toast"><div class="toast-inner" id="toastBody"></div></div>
+    <div id="settings">
+      <div class="set-card">
+        <h3>Controls</h3>
+        <div class="setsub">Choose how you swing. In a real match every player must use the same scheme.</div>
+        <div class="set-row">
+          <div class="lbl">Input</div>
+          <div class="seg" id="segMode">
+            <button data-mode="touch" class="on">Touch / pull-back</button>
+            <button data-mode="motion">Motion (swing)</button>
+          </div>
+        </div>
+        <div class="set-row" id="motionSetup">
+          <button class="ghost" id="enableMotion" style="width:100%;margin-bottom:10px">Enable motion sensors</button>
+          <div class="statrow"><span>Accelerometer</span><span id="stAccel" class="no">not detected</span></div>
+          <div class="statrow"><span>Gyroscope</span><span id="stGyro" class="no">not detected</span></div>
+          <div class="toggle" id="gyroRow">
+            <span class="lbl" style="margin:0">Use gyro for spin</span>
+            <button class="ghost" id="gyroToggle">Off</button>
+          </div>
+          <div class="note">If any player has no gyro, the whole match falls back to accelerometer only.</div>
+          <div style="margin-top:12px">
+            <div class="lbl">Swing sensitivity</div>
+            <input type="range" id="sens" min="0.6" max="1.7" step="0.05" value="1">
+          </div>
+          <div class="lbl" style="margin-top:14px">Sensor diagnostics</div>
+          <div id="diag">
+            <div class="statrow"><span>Secure (https)</span><span id="dSecure" class="no">—</span></div>
+            <div class="statrow"><span>Enable state</span><span id="dState">not started</span></div>
+            <div class="statrow"><span>Motion events</span><span id="dMotion">0</span></div>
+            <div class="statrow"><span>Orient events</span><span id="dOrient">0</span></div>
+            <div class="statrow"><span>Live accel</span><span id="dAccel">0.0</span></div>
+            <div class="statrow"><span>Live tilt</span><span id="dTilt">0°</span></div>
+            <div class="statrow"><span>Last error</span><span id="dErr" class="no">none</span></div>
+          </div>
+          <div class="note">Wave the phone: if <b>Live accel</b> moves, sensors work. If <b>Motion events</b> stays 0, Chrome is blocking them — check the site's “Motion sensors” permission (tap the lock icon).</div>
+        </div>
+        <button id="setClose" style="width:100%;margin-top:6px">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="foot">
+    <div id="coach">Pull <b>down &amp; back</b> from your conker to wind up — release to swing.</div>
+    <div class="controls">
+      <div class="taunt-wrap">
+        <select id="taunt" aria-label="Your victory taunt"></select>
+      </div>
+      <button class="ghost" id="settingsBtn">Controls</button>
+      <button class="ghost" id="how">How</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(()=>{
+  "use strict";
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  let W=0,H=0,DPR=Math.min(window.devicePixelRatio||1,2);
+
+  // ---------- taunts (the user-selectable funny jab) ----------
+  const TAUNTS = [
+    "Cracked like a cheap walnut. 🌰",
+    "That's a one-way ticket to the compost.",
+    "Should've soaked it in vinegar, mate.",
+    "Conker? More like con-GONE-er.",
+    "I've seen sturdier breakfast cereal.",
+    "Go home, your conker is shattered.",
+    "Even the squirrels are embarrassed for you."
+  ];
+  const tauntSel = document.getElementById('taunt');
+  TAUNTS.forEach((t,i)=>{const o=document.createElement('option');o.value=i;o.textContent=t;tauntSel.appendChild(o);});
+
+  // ---------- conker score lore: 0=a one-er, n => "an (n+1)-er" ----------
+  const ORD = ["a one-er","a two-er","a three-er","a four-er","a five-er","a six-er","a seven-er","an eight-er","a nine-er","a ten-er"];
+  const ordName = n => ORD[n] || ("a "+(n+1)+"-er");
+  const FOES = ["Old Knobbly","The Baker","Vinegar Vic","Smasher","Conkubine","The Gnarl","Iron Pip"];
+
+  // ---------- rank tiers: a conker visibly hardens and gains life as it wins ----------
+  const TIERS=[
+    {name:'Fresh',    shell:['#d59a5e','#bd7838','#8a4d22'], scar:'#f6ecd2', size:0.86, gloss:.52, rim:'rgba(255,232,184,.4)', tex:null,     emblem:null},
+    {name:'Seasoned', shell:['#b06a32','#8a4a22','#542a12'], scar:'#e8d5a8', size:0.95, gloss:.34, rim:null,                  tex:null,     emblem:null},
+    {name:'Hardened', shell:['#7c3d1d','#52260f','#2a1106'], scar:'#d6bd92', size:1.00, gloss:.20, rim:'rgba(28,12,5,.6)',    tex:'speck',  emblem:'scars'},
+    {name:'Veteran',  shell:['#46240f','#2c1407','#120602'], scar:'#bf9c68', size:1.05, gloss:.58, rim:'rgba(122,70,30,.75)', tex:'speck',  emblem:'glint'},
+    {name:'Champion', shell:['#86511f','#9a6326','#3c1f0a'], scar:'#f2d79c', size:1.09, gloss:.46, rim:'#ffd27a',             tex:null,     emblem:'crown'},
+    {name:'Legend',   shell:['#b65e22','#d98230','#3e1a08'], scar:'#ffe6a6', size:1.14, gloss:.6,  rim:'#ff8a3a',             tex:'molten', emblem:'fire'},
+    {name:'King',     shell:['#caa23a','#9a6a1e','#3a2406'], scar:'#fff2c8', size:1.20, gloss:.66, rim:'#ffe08a',             tex:'molten', emblem:'king'}
+  ];
+  const tierOf = s => s>=24?6 : s>=16?5 : s>=10?4 : s>=6?3 : s>=3?2 : s>=1?1 : 0;
+  const maxHpFor = s => 100 + tierOf(s)*18;   // 100,118,136,154,172,190,208
+
+  // ---------- game state ----------
+  const ST = {AIM:'aim',STRIKE:'strike',FOEWIND:'foewind',FOE:'foe',OVER:'over'};
+  let state, you, foe, charging, pull, aimPhase, foeAnim, fx, shake, t0, lastSwing, chargeStart, aimBase, aimTarget, pressStart, brace, braceFlash=0, flash=0, banner=null, foeWind=null, roundLog=null, floats=[], twitch=null;
+  // ---- control scheme / motion sensors ----
+  let controlMode='touch', motionOn=false, useGyro=false, motionSens=1, swingCd=0;
+  const sensors={accel:false, gyro:false};
+  const mo={grav:{x:0,y:0,z:0}, smoothMag:0, peak:0, swinging:false, gamma:0, lastSpin:0};
+  const diag={secure:false, state:'not started', motion:0, orient:0, accel:0, tilt:0, err:'none'};
+
+  function freshConker(score){const m=maxHpFor(score);return {hp:m,max:m,score:score};}
+
+  function newMatch(keepYou){
+    you = keepYou ? you : freshConker(0);
+    you.max = maxHpFor(you.score); you.hp = you.max;       // carry rank's bonus life, heal up
+    const fs = Math.max(1, you.score + (Math.floor(Math.random()*3)-1)); // foe tracks your rank (±1)
+    foe = freshConker(fs);
+    foe.name = FOES[Math.floor(Math.random()*FOES.length)];
+    document.getElementById('foeName').textContent = foe.name;
+    charging=false; pull={x:0,y:0,len:0}; aimPhase=Math.random()*Math.PI*2;
+    foeAnim=null; fx=[]; shake=0; lastSwing=null; brace=null; braceFlash=0; flash=0; banner=null; foeWind=null; roundLog=null; floats=[]; twitch=null;
+    document.getElementById('toast').classList.remove('show');
+    state=ST.AIM;
+    over.classList.remove('show');
+    syncHud();
+    coach("Pull <b>down &amp; back</b> to wind up. The harder you pull, the further back you load — more power, but <b>harder to aim</b>.");
+    setStats(null);
+  }
+
+  // ---------- layout anchors (in CSS px) ----------
+  function anchors(){
+    return {
+      foe:{x:W*0.5, y:H*0.16, swingR:Math.min(W,H)*0.20},
+      you:{x:W*0.5, y:H*0.70}
+    };
+  }
+
+  function resize(){
+    const r = cv.getBoundingClientRect();
+    W=r.width; H=r.height;
+    cv.width=W*DPR; cv.height=H*DPR;
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+  }
+  window.addEventListener('resize',resize);
+
+  // ---------- foe pendulum sway (the timing target) ----------
+  function foeAngle(time){
+    // sways side to side; scar faces you when angle near 0 -> sweet spot
+    return Math.sin(time*0.0018 + foeSwayPhase)*1.05;
+  }
+  let foeSwayPhase = Math.random()*6.28;
+  function foePos(time){
+    const a=anchors().foe, ang=foeAngle(time);
+    return {x:a.x + Math.sin(ang)*a.swingR, y:a.y + Math.abs(Math.cos(ang))*4, ang};
+  }
+  // exposure: 1 when facing you (ang~0), down to ~0.25 at the edges
+  function foeExposure(time){const c=Math.cos(foeAngle(time));return 0.25+0.75*Math.max(0,c);}
+
+  // ---------- input ----------
+  function localPt(e){
+    const r=cv.getBoundingClientRect();
+    const p=e.touches?e.touches[0]:e;
+    return {x:p.clientX-r.left, y:p.clientY-r.top};
+  }
+  function down(e){
+    if(state===ST.FOE){ e.preventDefault(); tryBrace(); return; }
+    if(state===ST.FOEWIND && foeWind){ e.preventDefault(); flinch(); return; }
+    if(state!==ST.AIM) return;
+    if(controlMode!=='touch') return;               // motion mode aims by tilt + swing, not drag
+    e.preventDefault();
+    const p=localPt(e); pressStart={x:p.x,y:p.y};   // grab anywhere — drag is measured from here
+    charging=true; pull={x:0,y:0,len:0}; chargeStart=performance.now(); aimBase=aimTarget=-Math.PI/2;
+  }
+  function move(e){
+    if(!charging) return;
+    e.preventDefault();
+    const p=localPt(e);
+    let dx=p.x-pressStart.x, dy=p.y-pressStart.y;    // drag delta from where you pressed
+    const max=Math.min(W,H)*0.24;
+    let len=Math.hypot(dx,dy);
+    if(len<0.0001){pull={x:0,y:0,len:0};return;}
+    // you can only wind BACK (downward, away from the foe above) — clamp into a downward cone
+    let ang=Math.atan2(dy,dx);                 // +PI/2 = straight down
+    const downC=Math.PI/2, cone=1.22;          // ±70°
+    let off=((ang-downC+Math.PI*3)%(Math.PI*2))-Math.PI;
+    if(off>cone) ang=downC+cone; else if(off<-cone) ang=downC-cone;
+    if(len>max) len=max;
+    dx=Math.cos(ang)*len; dy=Math.sin(ang)*len;
+    pull={x:dx,y:dy,len:len/max};              // len normalized 0..1 = power
+    aimTarget=Math.atan2(-dy,-dx);             // launch direction; smoothed in the frame loop
+  }
+  function up(e){
+    if(!charging) return;
+    charging=false;
+    if(pull.len<0.08){coach("Too soft — really <b>wind it back</b> to load power.");return;}
+    launch();
+  }
+  cv.addEventListener('mousedown',down); cv.addEventListener('mousemove',move);
+  window.addEventListener('mouseup',up);
+  cv.addEventListener('touchstart',down,{passive:false});
+  cv.addEventListener('touchmove',move,{passive:false});
+  window.addEventListener('touchend',up,{passive:false});
+  window.addEventListener('keydown',e=>{
+    if(e.code!=='Space') return;
+    if(state===ST.FOE){ e.preventDefault(); tryBrace(); }
+    else if(state===ST.FOEWIND && foeWind){ e.preventDefault(); flinch(); }
+  });
+
+  // ---------- motion sensors (Android/iOS): tilt to aim, swing to strike ----------
+  function enableMotion(){
+    diag.secure=!!window.isSecureContext; diag.err='none'; diag.state='requesting…';
+    const attach=()=>{
+      window.addEventListener('devicemotion', onMotion, {passive:true});
+      window.addEventListener('deviceorientation', onOrient, {passive:true});
+      motionOn=true; diag.state='listening for events';
+    };
+    try{
+      if(window.DeviceMotionEvent && typeof DeviceMotionEvent.requestPermission==='function'){
+        DeviceMotionEvent.requestPermission()
+          .then(s=>{ diag.state='motion permission: '+s; if(s==='granted'){ attach(); } else { diag.err='motion permission denied'; } })
+          .catch(err=>{ diag.err='requestPermission: '+err.message; attach(); });
+      } else { attach(); }
+      if(window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission==='function'){
+        DeviceOrientationEvent.requestPermission().catch(()=>{});
+      }
+    }catch(err){ diag.err='enable: '+err.message; }
+    // if classic devicemotion never fires, fall back to the Generic Sensor API (Android)
+    setTimeout(()=>{ if(diag.motion===0){ diag.state='no devicemotion — trying Sensor API'; tryGenericSensors(); } }, 1300);
+  }
+  function tryGenericSensors(){
+    try{
+      if('LinearAccelerationSensor' in window){
+        const acc=new LinearAccelerationSensor({frequency:60});
+        acc.addEventListener('reading',()=>{ diag.motion++; processDynAccel(acc.x||0,acc.y||0,acc.z||0); });
+        acc.addEventListener('error',ev=>{ diag.err='accel: '+((ev.error&&ev.error.name)||'error'); });
+        acc.start(); diag.state='Sensor API (linear accel)';
+      } else if('Accelerometer' in window){
+        const acc=new Accelerometer({frequency:60});
+        acc.addEventListener('reading',()=>{ diag.motion++;
+          mo.grav.x=mo.grav.x*0.9+(acc.x||0)*0.1; mo.grav.y=mo.grav.y*0.9+(acc.y||0)*0.1; mo.grav.z=mo.grav.z*0.9+(acc.z||0)*0.1;
+          processDynAccel((acc.x||0)-mo.grav.x,(acc.y||0)-mo.grav.y,(acc.z||0)-mo.grav.z); });
+        acc.addEventListener('error',ev=>{ diag.err='accel: '+((ev.error&&ev.error.name)||'error'); });
+        acc.start(); diag.state='Sensor API (accel)';
+      } else { diag.err='no Sensor API on this browser'; }
+      if('Gyroscope' in window){
+        const gy=new Gyroscope({frequency:60});
+        gy.addEventListener('reading',()=>{ if(!sensors.gyro){sensors.gyro=true;updateSensorUI();} mo.lastSpin=Math.abs(gy.x||0)+Math.abs(gy.z||0); });
+        gy.addEventListener('error',()=>{}); gy.start();
+      }
+    }catch(err){ diag.err='Sensor API: '+err.message; }
+  }
+  function processDynAccel(ax,ay,az){
+    diag.accel=Math.hypot(ax,ay,az);
+    if(!sensors.accel){ sensors.accel=true; updateSensorUI(); }
+    mo.smoothMag=mo.smoothMag*0.55+diag.accel*0.45;
+    const startT=14/motionSens, endT=7/motionSens;
+    if(controlMode==='motion' && motionOn && state===ST.AIM && performance.now()>swingCd){
+      if(!mo.swinging && mo.smoothMag>startT){ mo.swinging=true; mo.peak=mo.smoothMag; }
+      else if(mo.swinging){
+        mo.peak=Math.max(mo.peak,mo.smoothMag);
+        if(mo.smoothMag<endT){ mo.swinging=false; fireMotionSwing(mo.peak); swingCd=performance.now()+650; }
+      }
+    } else { mo.swinging=false; }
+  }
+  function onMotion(e){
+    diag.motion++;
+    let ax,ay,az;
+    if(e.acceleration && e.acceleration.x!=null){ ax=e.acceleration.x; ay=e.acceleration.y; az=e.acceleration.z; }
+    else { const g=e.accelerationIncludingGravity||{x:0,y:0,z:0};
+      mo.grav.x=mo.grav.x*0.9+(g.x||0)*0.1; mo.grav.y=mo.grav.y*0.9+(g.y||0)*0.1; mo.grav.z=mo.grav.z*0.9+(g.z||0)*0.1;
+      ax=(g.x||0)-mo.grav.x; ay=(g.y||0)-mo.grav.y; az=(g.z||0)-mo.grav.z; }
+    if(e.rotationRate && (e.rotationRate.alpha||e.rotationRate.beta||e.rotationRate.gamma)){
+      if(!sensors.gyro){ sensors.gyro=true; updateSensorUI(); }
+      mo.lastSpin=Math.abs(e.rotationRate.alpha||0)+Math.abs(e.rotationRate.gamma||0);
+    }
+    processDynAccel(ax,ay,az);
+  }
+  function onOrient(e){
+    diag.orient++;
+    if(e.gamma==null) return;
+    mo.gamma=e.gamma; diag.tilt=e.gamma;                // left-right tilt, -90..90
+    if(controlMode==='motion' && state===ST.AIM){
+      const t=Math.max(-1,Math.min(1, e.gamma/35));     // map tilt to the aim cone
+      aimTarget=-Math.PI/2 + t*1.0;
+    }
+  }
+  function setDiag(){
+    const S=id=>document.getElementById(id); if(!S('dSecure')) return;
+    diag.secure=!!window.isSecureContext;
+    S('dSecure').textContent=diag.secure?'yes':'NO — sensors blocked'; S('dSecure').className=diag.secure?'ok':'no';
+    S('dState').textContent=diag.state;
+    S('dMotion').textContent=diag.motion; S('dMotion').className=diag.motion>0?'ok':'no';
+    S('dOrient').textContent=diag.orient; S('dOrient').className=diag.orient>0?'ok':'no';
+    S('dAccel').textContent=diag.accel.toFixed(1);
+    S('dTilt').textContent=Math.round(diag.tilt)+'°';
+    S('dErr').textContent=diag.err; S('dErr').className=(diag.err&&diag.err!=='none')?'no':'ok';
+  }
+  function fireMotionSwing(peak){
+    const power=Math.max(0.12, Math.min(1,(peak-8)/22));   // normalise swing strength to power
+    pull={x:0,y:0,len:power};
+    if(aimBase===undefined) aimBase=aimTarget;
+    chargeStart=performance.now();                         // no hold-tremor for a ballistic swing
+    launch();
+  }
+  function updateSensorUI(){
+    const A=document.getElementById('stAccel'), G=document.getElementById('stGyro');
+    if(A){ A.textContent=sensors.accel?'detected':'waiting for a sample…'; A.className=sensors.accel?'ok':'no'; }
+    if(G){ G.textContent=sensors.gyro?'detected':'none on this device'; G.className=sensors.gyro?'ok':'no'; }
+    const row=document.getElementById('gyroRow');
+    if(row) row.classList.toggle('disabled', !sensors.gyro);
+    if(!sensors.gyro){ useGyro=false; const gt=document.getElementById('gyroToggle'); if(gt){gt.textContent='Off';gt.classList.remove('on');} }
+  }
+
+  // current aim direction = opposite of pull (slingshot), with a power-driven sway you must time
+  const TREMOR_MAX=0.28;
+  // the longer you hold the wound-up swing, the more your hand drifts (after a generous grace beat)
+  function heldTremor(time){
+    if(controlMode==='motion') return 0;             // ballistic swing has no dither-hold
+    const held=Math.max(0,(time-chargeStart)/1000);
+    return Math.min(TREMOR_MAX, Math.max(0, held-1.2)*0.10);
+  }
+  function aimDir(time){
+    const base = (aimBase!==undefined)?aimBase:Math.atan2(-pull.y,-pull.x); // smoothed — kills low-power jitter
+    const tremor = heldTremor(time);
+    const wobbleAmp = 0.04 + pull.len*0.30 + tremor; // shakier the harder you wind up...
+    const wob = Math.sin(time*0.006 + aimPhase)*wobbleAmp
+              + Math.sin(time*0.013 + aimPhase*1.7)*tremor*0.6; // ...and the longer you dawdle
+    return base + wob;
+  }
+
+  // ---------- the swing -> deterministic "swing packet" -> resolve ----------
+  function launch(){
+    const time=performance.now();
+    const a=anchors(), fp=foePos(time);
+    const r=Math.min(W,H)*0.085;
+    const dir=aimDir(time);
+    const power=pull.len;
+    // launch ORIGIN = where you wound the conker back to. More power = further back = longer, harder shot.
+    const O={x:a.you.x, y:a.you.y};            // constant runway — always launch from the fixed spot
+    const dx=Math.cos(dir), dy=Math.sin(dir);
+    // project the swing line up to the foe's height; how far does it land from the foe?
+    let xCross=O.x, miss=99999;
+    if(dy<-0.02){
+      const tcross=(fp.y-O.y)/dy;                 // flight distance to the foe (grows with power)
+      xCross=O.x+dx*tcross;
+      miss=Math.abs(xCross-fp.x);                 // sideways miss, amplified by distance
+    }
+    const hitWin=r*1.3;                            // land within ~1.3 conker-radii to connect
+    const aimScore=Math.max(0,1-miss/hitWin);
+    const connect=aimScore>0;                      // outside the window = a clean miss
+    const exposure=foeExposure(time);              // timing — scar facing you
+
+    // THE SWING PACKET — exactly what one phone would send the other.
+    const packet={power:+power.toFixed(3),angle:+dir.toFixed(3),exposure:+exposure.toFixed(3),seed:(Math.random()*1e6)|0};
+    console.log('SWING PACKET →',packet);
+
+    // resolve (both devices run this same function on the packet)
+    let dmg=0, label='miss', crit=false;
+    if(connect){
+      const base=40;
+      dmg = base * power * aimScore * (0.55+0.45*exposure);
+      crit = power>0.6 && aimScore>0.8 && exposure>0.78;
+      if(crit) dmg*=1.4;
+      dmg=Math.max(1,Math.round(dmg));
+      label = crit?'crit':(aimScore>0.7?'hit':'graze');
+    }
+    // the point the conker actually arrives at — the foe if it connects, otherwise off to the side
+    const impact = connect ? {x:fp.x,y:fp.y} : {x:xCross, y:fp.y};
+    lastSwing={power,aimScore,exposure,dmg,crit,label,connect,dir,origin:O,impact,from:'you',targetAtFire:fp};
+    runStrike(()=>{
+      if(connect) applyDamage(foe,dmg,crit,impact);
+      else missFx(impact);
+      afterPlayer(aimScore,dmg,crit,label,connect);
+    });
+  }
+
+  // a clean miss: a little dust puff where the conker sailed past, no damage
+  function missFx(at){
+    shake=2;
+    for(let i=0;i<8;i++)fx.push({x:at.x,y:at.y,vx:(Math.random()-.5)*2.4,vy:-Math.random()*2.2,life:1,r:2.2,whiff:true});
+  }
+
+  // animate player's conker arcing up to the target, then callback at impact
+  function runStrike(onImpact){
+    state=ST.STRIKE;
+    const time=performance.now();
+    const start = lastSwing.origin || {x:anchors().you.x,y:anchors().you.y};
+    const tgt = lastSwing.impact || lastSwing.targetAtFire;
+    const dur = 360 * (1.2 - 0.4*(lastSwing.power||0));  // max power ~20% faster, min ~20% slower
+    foeAnim={kind:'player',start,tgt,t0:time,dur,onImpact,fired:false};
+    setStats(lastSwing); // show the read-out as it leaves the hand
+  }
+
+  function afterPlayer(aimScore,dmg,crit,label,connect){
+    const power=lastSwing?lastSwing.power:0;
+    roundLog={p:{label,dmg,connect,crit,power,aim:aimScore}};
+    const r=Math.min(W,H)*0.085, a=anchors(), fp=foePos(performance.now());
+    // floating stats on YOUR conker (attacker): power + accuracy
+    spawnFloat(a.you.x, a.you.y-r*1.7, `${Math.round(power*100)}% PWR`, '#f4c878', 12);
+    spawnFloat(a.you.x, a.you.y-r*1.1, `${Math.round(aimScore*100)}% ACC`, '#f4c878', 12);
+    // floating damage on the FOE (defender)
+    if(connect) spawnFloat(fp.x, fp.y-r*1.3, `−${dmg}`, '#ff6a4a', 18);
+    else spawnFloat(fp.x, fp.y-r*1.3, 'MISS', '#b0a08c', 14);
+    toast(playerBlowLine(roundLog.p));
+    if(foe.hp<=0){return endMatch(true);}
+    scheduleFoeWind();
+  }
+  function playerBlowLine(p){
+    if(!p.connect) return `Swing and a miss!`;
+    if(p.crit) return `Smasher! <b>${p.dmg}</b> off ${foe.name}.`;
+    if(p.label==='hit') return `Clean hit — <b>${p.dmg}</b>.`;
+    return `Caught the edge — <b>${p.dmg}</b>.`;
+  }
+
+  // ---------- foe winds up (telegraphed by a charging bar), then swings ----------
+  function scheduleFoeWind(){
+    state=ST.FOEWIND;
+    const power=0.40+Math.random()*0.58;           // this swing's power — shown by the wind-up bar
+    const fillDur=650, holdDur=700+Math.random()*2600;  // suspense lives in the random hold
+    foeWind={power,t0:performance.now(),fillDur,holdDur,timer:null};
+    flash=1; banner={text:`${foe.name.toUpperCase()} WINDS UP`, t:performance.now(), life:1100};
+    foeWind.timer=setTimeout(()=>{ if(state===ST.FOEWIND && foeWind) foeSwing(power); }, fillDur+holdDur);
+  }
+
+  function foeSwing(power){
+    state=ST.FOE; foeWind=null;
+    const skill=0.45+Math.random()*0.4;
+    const aimScore=Math.max(0,Math.min(1, skill + (Math.random()-0.5)*0.5));
+    const exposure=0.5+Math.random()*0.5;
+    let dmg=0,crit=false;
+    if(aimScore>0.05){
+      dmg=34*power*aimScore*(0.55+0.45*exposure);
+      crit=power>0.7&&aimScore>0.82; if(crit)dmg*=1.4; dmg=Math.round(dmg);
+    }
+    const a=anchors(), time=performance.now();
+    const dur=700-power*180;                        // slowed & readable: ~520ms (smash) to ~700ms (tap)
+    brace={armed:true,used:false,impactAt:time+dur*0.5,dur,result:null,mit:1};
+    roundLog.f={power,acc:aimScore,crit};
+    foeAnim={kind:'foe',start:{...foePos(time)},tgt:{x:a.you.x,y:a.you.y},t0:time,dur,fired:false,
+      onImpact:()=>{
+        const final=Math.round(dmg*brace.mit);
+        applyDamage(you,final,crit&&brace.mit>0.6,a.you);
+        if(brace.result==='perfect' && foe.hp>0) applyDamage(foe,6,false,foePos(performance.now())); // rebound
+        brace.armed=false;
+        roundLog.f.final=final; roundLog.f.brace=brace.result;
+        spawnExchangeFloats();
+        toast(defenceLine(roundLog.f), Math.random()<0.5?randQuip():null);
+        if(you.hp<=0){return endMatch(false);}
+        setTimeout(()=>{ if(state===ST.FOE){ state=ST.AIM; coach("Your turn — <b>wind up</b> and let it fly."); } }, 750);
+      }};
+    coach(`<b>${foe.name}</b> swings — <b>tap to brace!</b>`);
+    banner={text:'BRACE!', t:performance.now(), life:1200};
+  }
+
+  function spawnExchangeFloats(){
+    const r=Math.min(W,H)*0.085, a=anchors(), fp=foePos(performance.now()), f=roundLog.f;
+    spawnFloat(fp.x, fp.y-r*1.7, `${Math.round(f.power*100)}% PWR`, '#f4a05a', 12);
+    spawnFloat(fp.x, fp.y-r*1.1, `${Math.round(f.acc*100)}% ACC`, '#f4a05a', 12);
+    if(f.brace==='perfect') spawnFloat(fp.x, fp.y+r*1.5, '−6', '#ff6a4a', 13); // rebound it took
+    spawnFloat(a.you.x, a.you.y-r*1.6, f.final>0?`−${f.final}`:'BLOCKED', f.final>0?'#ff6a4a':'#7bd389', 18);
+    const lbl={perfect:'PERFECT!',good:'GOOD BRACE',partial:'PARTIAL',miss:'MISTIMED'}[f.brace||'miss'];
+    spawnFloat(a.you.x, a.you.y-r*1.0, lbl, (f.brace&&f.brace!=='miss')?'#7bd389':'#b0a08c', 12);
+  }
+  function defenceLine(f){
+    const fin=f.final||0;
+    if(f.brace==='perfect') return `Perfect brace! Only <b>${fin}</b> — and it rebounds.`;
+    if(f.brace==='good') return `Well braced — just <b>${fin}</b> through.`;
+    if(f.brace==='partial') return `Half-braced — <b>${fin}</b> landed.`;
+    return `Took it flush — <b>${fin}</b>!`;
+  }
+  const QUIPS=["The conkers are watching.","Autumn favours the bold.","Someone's bound for the compost.","Vinegar wouldn't have saved that.","Playground rules — no mercy."];
+  function randQuip(){return QUIPS[Math.floor(Math.random()*QUIPS.length)];}
+
+  // ---------- toast (auto-fading centre commentary) + floating combat numbers ----------
+  let toastTimer=null;
+  function toast(mainHtml, quip){
+    const el=document.getElementById('toast');
+    document.getElementById('toastBody').innerHTML=`<div class="t-main">${mainHtml}</div>`+(quip?`<div class="t-quip">“${quip}”</div>`:'');
+    el.classList.add('show');
+    clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'), 3000);
+  }
+  function spawnFloat(x,y,text,color,size){
+    floats.push({x,baseY:y,text,color,size:size||14,t0:performance.now(),life:1700});
+    if(floats.length>24) floats.splice(0,floats.length-24);
+  }
+
+  // defending during the wind-up = a premature flinch: lose a little life, get ribbed, swing replays
+  const FLINCH_QUIPS=["Twitchy! You braced thin air.","Jumped the gun — settle down.","Itchy trigger finger, that one.","Premature! The crowd winces.","Flinched at a shadow."];
+  function flinch(){
+    if(foeWind&&foeWind.timer) clearTimeout(foeWind.timer);
+    foeWind=null;
+    const r=Math.min(W,H)*0.085, a=anchors();
+    you.hp=Math.max(0,you.hp-5); syncHud();
+    twitch={t0:performance.now()}; shake=8;
+    spawnFloat(a.you.x, a.you.y-r*1.4, '−5 FLINCH', '#ff6a4a', 15);
+    toast(FLINCH_QUIPS[Math.floor(Math.random()*FLINCH_QUIPS.length)]);
+    banner={text:'READY UP AGAIN', t:performance.now(), life:1500, color:'#ff8a5a'};
+    coach("You twitched early! <b>−5</b> — wait for the swing next time.");
+    if(you.hp<=0){ return endMatch(false); }
+    setTimeout(()=>{ if(state===ST.FOEWIND && !foeWind) scheduleFoeWind(); }, 1200);
+  }
+
+  // tap during the incoming swing to brace; tighter window on faster (higher-power) swings
+  function tryBrace(){
+    if(!brace||!brace.armed||brace.used) return;
+    brace.used=true; braceFlash=1;
+    const err=Math.abs(performance.now()-brace.impactAt), d=brace.dur;
+    const core=0.12*d, outer=0.62*d;
+    let mit;
+    if(err<=core) mit = 0.06 + 0.18*(err/core);                    // dead-on → 0.06, up to 0.24
+    else if(err<=outer) mit = 0.24 + 0.76*((err-core)/(outer-core)); // ramps to full sooner now
+    else mit = 1;
+    brace.mit=mit; brace.err=err;
+    brace.result = mit<0.18?'perfect' : mit<0.45?'good' : mit<0.8?'partial' : 'miss';
+    coach({perfect:"<b>PERFECT BRACE!</b> The blow rebounds.",
+           good:"<b>Well braced</b> — most of it absorbed.",
+           partial:"Half-braced — some got through.",
+           miss:"Barely braced — took it nearly flush."}[brace.result]);
+  }
+
+  function applyDamage(target,dmg,crit,at){
+    target.hp=Math.max(0,target.hp-dmg);
+    if(dmg>0){
+      burst(at.x,at.y,crit?34:18,crit);
+      shake=crit?16:Math.min(12,4+dmg*0.3);
+    } else {
+      // whiff puff
+      for(let i=0;i<6;i++)fx.push({x:at.x,y:at.y,vx:(Math.random()-.5)*2,vy:-Math.random()*2,life:1,r:2,whiff:true});
+    }
+    syncHud();
+  }
+
+  // ---------- end / scoring (winner inherits loser's score +1) ----------
+  function endMatch(won){
+    state=ST.OVER;
+    const verdict=document.getElementById('verdict');
+    const tauntLine=document.getElementById('tauntLine');
+    const sub=document.getElementById('overSub');
+    if(won){
+      const before=you.score, bTier=tierOf(before), bMax=maxHpFor(before);
+      you.score = you.score + foe.score + 1;       // classic conker rule
+      const aTier=tierOf(you.score), aMax=maxHpFor(you.score);
+      verdict.textContent="SMASHED!"; verdict.className="verdict win";
+      tauntLine.textContent = TAUNTS[+tauntSel.value];
+      const rankMsg = aTier>bTier
+        ? ` It hardened into a <b style="color:var(--gold)">${TIERS[aTier].name}</b> conker — <b style="color:var(--gold)">+${aMax-bMax} life</b>.`
+        : '';
+      sub.innerHTML = `Your ${ordName(before)} beat ${ordName(foe.score)} — now it's <b style="color:var(--gold)">${ordName(you.score)}</b>.${rankMsg} It carries that into the next bout.`;
+      burst(anchors().foe.x,anchors().foe.y,46,true); shake=18;
+    } else {
+      verdict.textContent="SHATTERED"; verdict.className="verdict lose";
+      tauntLine.textContent = `“${foe.name}” chalks up the win.`;
+      sub.innerHTML = `Your conker is done. Read the <b>scar timing</b> next round — hit while it faces you.`;
+      burst(anchors().you.x,anchors().you.y,40,true); shake=16;
+    }
+    over.classList.add('show');
+  }
+
+  // ---------- particles ----------
+  function burst(x,y,n,big){
+    for(let i=0;i<n;i++){
+      const a=Math.random()*Math.PI*2, sp=(big?5:3)*Math.random()+1;
+      fx.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-1,life:1,r:(big?3.5:2.4)*Math.random()+1,
+        col:Math.random()<0.5?'#7a3f1d':(Math.random()<0.5?'#f2a03d':'#ffce7a')});
+    }
+  }
+
+  // ---------- HUD sync ----------
+  function syncHud(){
+    document.getElementById('youHp').style.width=(you.hp/you.max*100)+'%';
+    document.getElementById('foeHp').style.width=(foe.hp/foe.max*100)+'%';
+    document.getElementById('youSixer').textContent=`${TIERS[tierOf(you.score)].name} · ${you.max} life`;
+    document.getElementById('foeSixer').textContent=`${TIERS[tierOf(foe.score)].name} · ${foe.max} life`;
+  }
+  function setStats(){ /* bottom stat boxes removed — combat numbers now float on the conkers */ }
+  function coach(html){document.getElementById('coach').innerHTML=html;}
+
+  // ---------- drawing ----------
+  const SPECK=[[-.34,-.12],[.22,-.32],[.42,.12],[-.12,.34],[.14,.4],[-.44,.18],[.36,-.18],[-.26,-.38],[.06,-.18],[-.16,.06],[.3,.3],[-.4,-.02]];
+  function drawConker(x,y,r,hp,max,glow,tier){
+    tier=tier||0; const T=TIERS[tier];
+    const rr=r*(T.size||1);
+    const frac=hp/max;
+    ctx.save();ctx.translate(x,y);
+    // shadow
+    ctx.fillStyle='rgba(0,0,0,.28)';ctx.beginPath();ctx.ellipse(0,rr*0.94,rr*0.92,rr*0.34,0,0,7);ctx.fill();
+    // ember/gold aura behind a Legend or King
+    if(T.emblem==='fire'||T.emblem==='king'){
+      const c1=T.emblem==='king'?'rgba(255,210,110,.6)':'rgba(255,140,60,.55)';
+      const c2=T.emblem==='king'?'rgba(255,230,150,.45)':'rgba(255,200,90,.4)';
+      ctx.strokeStyle=c1;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(0,0,rr+6,0,7);ctx.stroke();
+      ctx.strokeStyle=c2;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(0,0,rr+11,0,7);ctx.stroke();
+    }
+    // body
+    const g=ctx.createRadialGradient(-rr*0.3,-rr*0.35,rr*0.1,0,0,rr*1.1);
+    g.addColorStop(0,T.shell[0]);g.addColorStop(0.55,T.shell[1]);g.addColorStop(1,T.shell[2]);
+    ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,rr,0,7);ctx.fill();
+    // rim for definition (gold champion, ember legend, dark hardened, pale fresh)
+    if(T.rim){ctx.strokeStyle=T.rim;ctx.lineWidth=Math.max(1.5,rr*0.06);ctx.beginPath();ctx.arc(0,0,rr-rr*0.03,0,7);ctx.stroke();}
+    // surface texture
+    if(T.tex==='speck'){
+      ctx.fillStyle='rgba(18,9,3,.32)';
+      for(const s of SPECK){ctx.beginPath();ctx.arc(s[0]*rr,s[1]*rr,rr*0.045,0,7);ctx.fill();}
+    } else if(T.tex==='molten'){
+      ctx.save();ctx.shadowColor='#ff7a2a';ctx.shadowBlur=8;ctx.strokeStyle='#ff9a3a';
+      ctx.lineWidth=rr*0.05;ctx.lineCap='round';
+      const veins=[[-.1,-.5,.0,-.1,.15,.35],[.42,-.2,.1,.05,-.2,.45],[-.46,.05,-.15,.1,.1,.5]];
+      for(const v of veins){ctx.beginPath();ctx.moveTo(v[0]*rr,v[1]*rr);ctx.lineTo(v[2]*rr,v[3]*rr);ctx.lineTo(v[4]*rr,v[5]*rr);ctx.stroke();}
+      ctx.restore();
+    }
+    // gloss highlight (brighter on polished tiers)
+    ctx.fillStyle=`rgba(255,228,180,${T.gloss||.32})`;
+    ctx.beginPath();ctx.ellipse(-rr*0.32,-rr*0.36,rr*0.28,rr*0.16,-0.6,0,7);ctx.fill();
+    // scar / eye
+    ctx.fillStyle=T.scar;ctx.beginPath();ctx.ellipse(0,rr*0.18,rr*0.42,rr*0.3,0,0,7);ctx.fill();
+    ctx.fillStyle='#b89055';ctx.beginPath();ctx.ellipse(0,rr*0.20,rr*0.30,rr*0.20,0,0,7);ctx.fill();
+    // rank emblems
+    if(T.emblem==='scars'){
+      ctx.strokeStyle='rgba(15,7,3,.6)';ctx.lineWidth=Math.max(1,rr*0.05);ctx.lineCap='round';
+      ctx.beginPath();ctx.moveTo(-rr*0.55,-rr*0.18);ctx.lineTo(-rr*0.12,-rr*0.46);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(rr*0.5,-rr*0.02);ctx.lineTo(rr*0.18,-rr*0.4);ctx.stroke();
+    }
+    if(T.emblem==='glint'||T.emblem==='crown'||T.emblem==='fire'||T.emblem==='king'){
+      ctx.fillStyle='rgba(255,224,160,.9)';ctx.beginPath();ctx.arc(-rr*0.27,-rr*0.42,rr*0.09,0,7);ctx.fill();
+    }
+    if(T.emblem==='crown'){
+      ctx.fillStyle='#ffd27a';const cw=rr*0.56,cy=-rr*0.66;
+      ctx.beginPath();ctx.moveTo(-cw/2,cy+rr*0.18);ctx.lineTo(-cw/2,cy);
+      ctx.lineTo(-cw/4,cy+rr*0.1);ctx.lineTo(0,cy-rr*0.06);ctx.lineTo(cw/4,cy+rr*0.1);
+      ctx.lineTo(cw/2,cy);ctx.lineTo(cw/2,cy+rr*0.18);ctx.closePath();ctx.fill();
+      ctx.fillStyle='#fff0c0';ctx.beginPath();ctx.arc(0,cy-rr*0.02,rr*0.05,0,7);ctx.fill();
+    }
+    if(T.emblem==='king'){ // grand jewelled crown
+      const cw=rr*0.86,cy=-rr*0.74,base=cy+rr*0.24;
+      ctx.fillStyle='#ffe08a';
+      ctx.beginPath();ctx.moveTo(-cw/2,base);ctx.lineTo(-cw/2,cy+rr*0.04);
+      ctx.lineTo(-cw*0.3,cy+rr*0.16);ctx.lineTo(-cw*0.18,cy-rr*0.06);
+      ctx.lineTo(0,cy+rr*0.12);ctx.lineTo(cw*0.18,cy-rr*0.06);
+      ctx.lineTo(cw*0.3,cy+rr*0.16);ctx.lineTo(cw/2,cy+rr*0.04);
+      ctx.lineTo(cw/2,base);ctx.closePath();ctx.fill();
+      ctx.strokeStyle='#a87a16';ctx.lineWidth=1.2;ctx.stroke();
+      // jewels
+      ctx.fillStyle='#ff5a5a';ctx.beginPath();ctx.arc(0,base-rr*0.05,rr*0.07,0,7);ctx.fill();
+      ctx.fillStyle='#6ab0ff';ctx.beginPath();ctx.arc(-cw*0.28,base-rr*0.04,rr*0.045,0,7);ctx.fill();
+      ctx.beginPath();ctx.arc(cw*0.28,base-rr*0.04,rr*0.045,0,7);ctx.fill();
+      // crown tips
+      ctx.fillStyle='#fff6d8';
+      for(const tx of [-cw*0.18,0,cw*0.18]){ctx.beginPath();ctx.arc(tx,cy-rr*0.06,rr*0.035,0,7);ctx.fill();}
+    }
+    // cracks as hp drops
+    ctx.strokeStyle='#0d0805';ctx.lineWidth=Math.max(1.4,rr*0.05);ctx.lineCap='round';
+    const cracks=Math.floor((1-frac)*4);
+    const seeds=[[-.2,-.5,.3,.4],[.4,-.3,-.2,.5],[-.5,.1,.2,-.4],[.1,.5,-.4,-.2]];
+    for(let i=0;i<cracks;i++){const s=seeds[i];ctx.beginPath();
+      ctx.moveTo(s[0]*rr,s[1]*rr);ctx.lineTo(s[2]*rr*0.5,s[3]*rr*0.5);ctx.lineTo(s[2]*rr,s[3]*rr);ctx.stroke();}
+    if(glow){ctx.strokeStyle='rgba(242,160,61,.5)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,rr+5,0,7);ctx.stroke();}
+    ctx.restore();
+  }
+  // a red pulsing ring when a conker is nearly shattered
+  function lowLifeFx(x,y,r,frac,time){
+    if(frac>0 && frac<0.30){
+      const p=0.5+0.5*Math.sin(time*0.014);
+      ctx.strokeStyle=`rgba(224,72,52,${0.22+0.5*p})`;ctx.lineWidth=2.5;
+      ctx.beginPath();ctx.arc(x,y,r*1.12+6+p*3,0,7);ctx.stroke();
+    }
+  }
+  function drawString(x1,y1,x2,y2){
+    ctx.strokeStyle='#b89b6e';ctx.lineWidth=2;ctx.globalAlpha=.7;
+    ctx.beginPath();ctx.moveTo(x1,y1);
+    const mx=(x1+x2)/2+( (x2-x1)*0.04 ), my=(y1+y2)/2+8;
+    ctx.quadraticCurveTo(mx,my,x2,y2);ctx.stroke();ctx.globalAlpha=1;
+  }
+  function roundRect(x,y,w,h,rad){ctx.beginPath();ctx.moveTo(x+rad,y);
+    ctx.arcTo(x+w,y,x+w,y+h,rad);ctx.arcTo(x+w,y+h,x,y+h,rad);
+    ctx.arcTo(x,y+h,x,y,rad);ctx.arcTo(x,y,x+w,y,rad);ctx.closePath();}
+  function drawPowerBar(p){
+    const bw=W*0.6, bh=12, bx=(W-bw)/2, by=H*0.93;
+    ctx.fillStyle='rgba(0,0,0,.35)';roundRect(bx,by,bw,bh,6);ctx.fill();
+    ctx.strokeStyle='rgba(184,155,110,.3)';ctx.lineWidth=1;roundRect(bx,by,bw,bh,6);ctx.stroke();
+    const col=p>0.66?'#ff7a4a':(p>0.33?'#f2a03d':'#e8c36a');
+    ctx.fillStyle=col;roundRect(bx+1.5,by+1.5,Math.max(0,(bw-3)*p),bh-3,5);ctx.fill();
+    ctx.fillStyle='rgba(237,224,206,.7)';ctx.font='600 10px system-ui,sans-serif';
+    ctx.textAlign='center';ctx.fillText('POWER',W/2,by-6);ctx.textAlign='left';
+  }
+
+  // ---------- painted autumn-playground backdrop + corner characters ----------
+  const LEAVES=[[0.12,0.30],[0.82,0.22],[0.46,0.14],[0.68,0.38],[0.28,0.46],[0.9,0.5],[0.06,0.6]];
+  function drawScene(time){
+    // sky
+    const sky=ctx.createLinearGradient(0,0,0,H*0.62);
+    sky.addColorStop(0,'#241a30');sky.addColorStop(0.5,'#3e2c34');sky.addColorStop(1,'#6a4632');
+    ctx.fillStyle=sky;ctx.fillRect(0,0,W,H*0.62);
+    // soft moon/sun glow
+    ctx.save();ctx.globalAlpha=.5;const gx=W*0.78,gy=H*0.16;
+    const gl=ctx.createRadialGradient(gx,gy,2,gx,gy,H*0.18);
+    gl.addColorStop(0,'rgba(255,224,170,.7)');gl.addColorStop(1,'rgba(255,224,170,0)');
+    ctx.fillStyle=gl;ctx.beginPath();ctx.arc(gx,gy,H*0.18,0,7);ctx.fill();ctx.restore();
+    // distant tree canopies along the horizon
+    const hz=H*0.6;
+    const trees=[[0.1,0.12,'#5a3320'],[0.27,0.16,'#6a3c22'],[0.5,0.1,'#5e3620'],[0.72,0.15,'#693a22'],[0.9,0.12,'#542f1c']];
+    for(const t of trees){const tx=t[0]*W, tr=t[1]*Math.min(W,H);
+      ctx.fillStyle=t[2];ctx.beginPath();ctx.arc(tx,hz-tr*0.4,tr,0,7);ctx.fill();
+      ctx.fillStyle='#3a2414';ctx.fillRect(tx-tr*0.08,hz-tr*0.4,tr*0.16,tr*0.9);}
+    // playground railing silhouette
+    ctx.strokeStyle='rgba(20,12,8,.5)';ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(0,hz);ctx.lineTo(W,hz);ctx.stroke();
+    for(let x=W*0.04;x<W;x+=W*0.07){ctx.beginPath();ctx.moveTo(x,hz);ctx.lineTo(x,hz-14);ctx.stroke();}
+    // ground
+    const gnd=ctx.createLinearGradient(0,hz,0,H);
+    gnd.addColorStop(0,'#3a2616');gnd.addColorStop(1,'#1d1208');
+    ctx.fillStyle=gnd;ctx.fillRect(0,hz,W,H-hz);
+    // scattered + drifting leaves
+    const lc=['#c46a2a','#d98a30','#a8521f','#caa23a'];
+    for(let i=0;i<LEAVES.length;i++){const L=LEAVES[i];
+      const dx=Math.sin(time*0.0004+i)*10, dy=(i<3?Math.cos(time*0.0005+i)*6:0);
+      ctx.save();ctx.globalAlpha=.5;ctx.fillStyle=lc[i%lc.length];
+      ctx.translate(L[0]*W+dx,L[1]*H+dy);ctx.rotate(i+time*0.0003);
+      ctx.beginPath();ctx.ellipse(0,0,6,3,0,0,7);ctx.fill();ctx.restore();}
+    // corner characters
+    drawMascot(W*0.12, H*0.9, Math.min(W,H)*0.075, 'grumpy', time);
+    drawMascot(W*0.88, H*0.9, Math.min(W,H)*0.078, 'king', time);
+    // gentle vignette so the action pops
+    ctx.save();const vg=ctx.createRadialGradient(W/2,H*0.45,H*0.2,W/2,H*0.45,H*0.7);
+    vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(8,4,2,.55)');
+    ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);ctx.restore();
+  }
+  function drawMascot(x,y,r,kind,time){
+    ctx.save();ctx.translate(x,y);
+    const bob=Math.sin(time*0.003+(kind==='king'?1:0))*2; ctx.translate(0,bob);
+    // body
+    const g=ctx.createRadialGradient(-r*0.3,-r*0.35,r*0.1,0,0,r*1.1);
+    g.addColorStop(0,'#9a5026');g.addColorStop(0.6,'#7a3f1d');g.addColorStop(1,'#46240f');
+    ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,r,0,7);ctx.fill();
+    ctx.fillStyle='rgba(255,228,180,.25)';ctx.beginPath();ctx.ellipse(-r*0.3,-r*0.35,r*0.24,r*0.14,-0.6,0,7);ctx.fill();
+    // eyes (white + pupil)
+    const ex=r*0.32, ey=-r*0.1;
+    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(-ex,ey,r*0.2,0,7);ctx.arc(ex,ey,r*0.2,0,7);ctx.fill();
+    ctx.fillStyle='#201008';
+    const look=kind==='king'?-r*0.05:r*0.03;
+    ctx.beginPath();ctx.arc(-ex+look,ey,r*0.1,0,7);ctx.arc(ex+look,ey,r*0.1,0,7);ctx.fill();
+    if(kind==='grumpy'){
+      // angry brows
+      ctx.strokeStyle='#201008';ctx.lineWidth=r*0.09;ctx.lineCap='round';
+      ctx.beginPath();ctx.moveTo(-ex-r*0.18,ey-r*0.28);ctx.lineTo(-ex+r*0.16,ey-r*0.12);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(ex+r*0.18,ey-r*0.28);ctx.lineTo(ex-r*0.16,ey-r*0.12);ctx.stroke();
+      // frown
+      ctx.lineWidth=r*0.1;ctx.beginPath();ctx.arc(0,r*0.62,r*0.34,Math.PI*1.15,Math.PI*1.85);ctx.stroke();
+      // crack
+      ctx.strokeStyle='#180c06';ctx.lineWidth=r*0.07;
+      ctx.beginPath();ctx.moveTo(r*0.1,-r*0.7);ctx.lineTo(r*0.0,-r*0.3);ctx.lineTo(r*0.2,-r*0.05);ctx.stroke();
+    } else {
+      // king crown
+      ctx.fillStyle='#ffd860';const cw=r*0.95,cy=-r*0.95;
+      ctx.beginPath();ctx.moveTo(-cw/2,cy+r*0.28);ctx.lineTo(-cw/2,cy+r*0.05);
+      ctx.lineTo(-cw*0.25,cy+r*0.18);ctx.lineTo(0,cy-r*0.05);ctx.lineTo(cw*0.25,cy+r*0.18);
+      ctx.lineTo(cw/2,cy+r*0.05);ctx.lineTo(cw/2,cy+r*0.28);ctx.closePath();ctx.fill();
+      ctx.fillStyle='#ff5a5a';ctx.beginPath();ctx.arc(0,cy+r*0.16,r*0.08,0,7);ctx.fill();
+      // big grin
+      ctx.fillStyle='#3a1810';ctx.beginPath();ctx.arc(0,r*0.18,r*0.34,0.1*Math.PI,0.9*Math.PI);ctx.fill();
+      ctx.fillStyle='#ff8a8a';ctx.beginPath();ctx.arc(0,r*0.34,r*0.16,0,Math.PI);ctx.fill();
+      // rosy cheeks
+      ctx.fillStyle='rgba(255,120,90,.4)';ctx.beginPath();ctx.arc(-r*0.6,r*0.1,r*0.14,0,7);ctx.arc(r*0.6,r*0.1,r*0.14,0,7);ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function frame(time){
+    requestAnimationFrame(frame);
+    if(!state){return;}
+    ctx.clearRect(0,0,W,H);
+    drawScene(time);
+    // screen shake
+    let sx=0,sy=0;
+    if(shake>0.3){sx=(Math.random()-.5)*shake;sy=(Math.random()-.5)*shake;shake*=0.86;}
+    ctx.save();ctx.translate(sx,sy);
+
+    const a=anchors();
+    const r=Math.min(W,H)*0.085;
+
+    // top anchor beam
+    ctx.strokeStyle='rgba(184,155,110,.18)';ctx.lineWidth=6;
+    ctx.beginPath();ctx.moveTo(W*0.3,a.foe.y-r*1.8);ctx.lineTo(W*0.7,a.foe.y-r*1.8);ctx.stroke();
+
+    // ---- foe conker ----
+    let fpos=foePos(time);
+    if(foeAnim&&foeAnim.kind==='foe'){
+      const p=Math.min(1,(time-foeAnim.t0)/foeAnim.dur);
+      const e=p<0.5?p*2:1-(p-0.5)*2; // out & back
+      fpos={x:foeAnim.start.x+(foeAnim.tgt.x-foeAnim.start.x)*easeIn(e),
+            y:foeAnim.start.y+(foeAnim.tgt.y-foeAnim.start.y)*easeIn(e)};
+      if(!foeAnim.fired&&p>=0.5){foeAnim.fired=true;foeAnim.onImpact();}
+      if(p>=1)foeAnim=null;
+    }
+    drawString(a.foe.x, a.foe.y-r*1.8, fpos.x, fpos.y);
+    const exposingNow = state===ST.AIM && charging;
+    drawConker(fpos.x,fpos.y,r,foe.hp,foe.max, exposingNow && foeExposure(time)>0.78, tierOf(foe.score));
+    lowLifeFx(fpos.x,fpos.y,r,foe.hp/foe.max,time);
+
+    // sweet-spot tell: subtle ring pulses when scar faces you during your wind-up
+    if(charging){
+      const ex=foeExposure(time);
+      if(ex>0.72){ctx.strokeStyle=`rgba(255,206,122,${(ex-0.72)*2.6})`;ctx.lineWidth=2;
+        ctx.beginPath();ctx.arc(fpos.x,fpos.y,r+9+Math.sin(time*0.01)*2,0,7);ctx.stroke();}
+    }
+
+    // foe wind-up telegraph: a charging bar shows how much power the swing is loading
+    if(state===ST.FOEWIND && foeWind){
+      const el=time-foeWind.t0, filling=el<foeWind.fillDur;
+      const lvl = filling ? (el/foeWind.fillDur)*foeWind.power : foeWind.power;
+      const bw=r*4, bh=10, bx=a.foe.x-bw/2, by=fpos.y - r*2.1;
+      ctx.fillStyle='rgba(0,0,0,.4)';roundRect(bx,by,bw,bh,5);ctx.fill();
+      ctx.strokeStyle='rgba(184,155,110,.3)';ctx.lineWidth=1;roundRect(bx,by,bw,bh,5);ctx.stroke();
+      const col=foeWind.power>0.72?'#ff5a3a':(foeWind.power>0.48?'#f2a03d':'#e8c36a');
+      const pulse=filling?1:(0.7+0.3*Math.sin(time*0.013));
+      ctx.globalAlpha=pulse;ctx.fillStyle=col;
+      roundRect(bx+1.5,by+1.5,Math.max(0,(bw-3)*lvl),bh-3,4);ctx.fill();ctx.globalAlpha=1;
+      ctx.fillStyle='rgba(237,224,206,.85)';ctx.font='700 9px system-ui,sans-serif';ctx.textAlign='center';
+      ctx.fillText(filling?'WINDING UP':'READY TO STRIKE',a.foe.x,by-5);ctx.textAlign='left';
+    }
+
+    // ---- player conker ----
+    let ypos={x:a.you.x,y:a.you.y};            // your conker stays put — power reads on the bar, not by moving
+    if(charging){ aimBase += (aimTarget-aimBase)*0.16; }
+    const motionAiming = controlMode==='motion' && state===ST.AIM && !foeAnim;
+    if(motionAiming){ pull={x:0,y:0,len:0}; if(aimBase===undefined)aimBase=aimTarget; aimBase += (aimTarget-aimBase)*0.18; }
+    if(foeAnim&&foeAnim.kind==='player'){
+      const p=Math.min(1,(time-foeAnim.t0)/foeAnim.dur);
+      const e=p<0.5?p*2:1-(p-0.5)*2;
+      ypos={x:foeAnim.start.x+(foeAnim.tgt.x-foeAnim.start.x)*easeIn(e),
+            y:foeAnim.start.y+(foeAnim.tgt.y-foeAnim.start.y)*easeIn(e)};
+      if(!foeAnim.fired&&p>=0.5){foeAnim.fired=true;foeAnim.onImpact();}
+      if(p>=1){foeAnim=null;}
+    }
+    // your string from bottom anchor
+    if(twitch){
+      const tage=time-twitch.t0;
+      if(tage>360) twitch=null;
+      else { const amp=10*(1-tage/360); ypos={x:ypos.x+Math.sin(tage*0.09)*amp, y:ypos.y+Math.cos(tage*0.12)*amp*0.5}; }
+    }
+    drawString(a.you.x, H+20, ypos.x, ypos.y);
+
+    // while charging: aim line + steadiness ring + a power bar (the conker itself stays still)
+    if(charging){
+      const dir=aimDir(time);
+      const reach=Math.min(W,H)*0.9;
+      const tremor=heldTremor(time);
+      const steady=1-tremor/TREMOR_MAX;          // 1 = rock steady, 0 = fully shaky
+      if(pull.len>=0.05){
+        ctx.save();
+        ctx.setLineDash([6,9]);ctx.lineWidth=2;
+        // amber when steady, shifting to red as the hand drifts
+        ctx.strokeStyle=`rgba(${242+(255-242)*(1-steady)|0}, ${160*steady+70*(1-steady)|0}, ${61*steady|0}, .6)`;
+        ctx.beginPath();ctx.moveTo(ypos.x,ypos.y);
+        ctx.lineTo(ypos.x+Math.cos(dir)*reach, ypos.y+Math.sin(dir)*reach);ctx.stroke();
+        ctx.restore();
+      }
+      // steadiness ring (drains as you dither)
+      if(tremor>0){
+        ctx.strokeStyle=`rgba(230,${90+120*steady|0},70,.85)`;ctx.lineWidth=3;ctx.lineCap='round';
+        ctx.beginPath();ctx.arc(ypos.x,ypos.y,r+12,-Math.PI/2,-Math.PI/2+steady*Math.PI*2);ctx.stroke();ctx.lineCap='butt';
+      }
+      drawPowerBar(pull.len);
+    }
+    drawConker(ypos.x,ypos.y,r,you.hp,you.max, state===ST.AIM&&!charging, tierOf(you.score));
+    lowLifeFx(ypos.x,ypos.y,r,you.hp/you.max,time);
+
+    // motion mode: continuous tilt-aim line + hint (no pull-back gesture)
+    if(motionAiming){
+      const dir=aimDir(time), reach=Math.min(W,H)*0.9;
+      ctx.save();ctx.setLineDash([6,9]);ctx.lineWidth=2;ctx.strokeStyle='rgba(242,160,61,.6)';
+      ctx.beginPath();ctx.moveTo(ypos.x,ypos.y);
+      ctx.lineTo(ypos.x+Math.cos(dir)*reach,ypos.y+Math.sin(dir)*reach);ctx.stroke();ctx.restore();
+      ctx.fillStyle='rgba(237,224,206,.55)';ctx.font='600 11px system-ui,sans-serif';ctx.textAlign='center';
+      ctx.fillText('Tilt to aim · swing to strike',W/2,a.you.y+r*2.4);ctx.textAlign='left';
+    }
+
+    // incoming-strike brace cue: a ring closes onto your conker, hotter as the perfect moment nears
+    if(state===ST.FOE && brace && brace.armed){
+      const togo=brace.impactAt-time;
+      const k=Math.max(0,Math.min(1.7, togo/(brace.dur*0.5)));
+      const rad=r+5+k*r*1.8;
+      const ae=Math.abs(togo)/brace.dur;
+      const col = ae<0.12?'rgba(123,211,137,.95)' : ae<0.38?'rgba(240,200,90,.85)' : 'rgba(242,160,61,.55)';
+      ctx.strokeStyle=col; ctx.lineWidth = ae<0.12?4.5:2.5;
+      ctx.beginPath();ctx.arc(a.you.x,a.you.y,rad,0,7);ctx.stroke();
+    }
+    if(braceFlash>0){
+      ctx.globalAlpha=braceFlash*0.55;
+      ctx.fillStyle=(brace&&brace.mit<0.7)?'#7bd389':'#c25a3a';
+      ctx.beginPath();ctx.arc(a.you.x,a.you.y,r+10,0,7);ctx.fill();
+      ctx.globalAlpha=1; braceFlash*=0.88; if(braceFlash<0.02)braceFlash=0;
+    }
+
+    // particles
+    for(let i=fx.length-1;i>=0;i--){const p=fx[i];
+      p.x+=p.vx;p.y+=p.vy;p.vy+=0.18;p.life-=0.026;
+      if(p.life<=0){fx.splice(i,1);continue;}
+      ctx.globalAlpha=Math.max(0,p.life);
+      ctx.fillStyle=p.whiff?'rgba(200,180,150,.5)':p.col;
+      ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,7);ctx.fill();
+    }
+    ctx.globalAlpha=1;
+    ctx.restore();
+
+    // warning flash + banner (drawn in screen space, unaffected by shake)
+    if(flash>0){
+      ctx.fillStyle=`rgba(242,160,61,${flash*0.22})`;
+      ctx.fillRect(0,0,W,H); flash*=0.9; if(flash<0.02)flash=0;
+    }
+    if(banner){
+      const age=time-banner.t;
+      if(age>banner.life){ banner=null; }
+      else {
+        const a=age<120?age/120:(age>banner.life-260?(banner.life-age)/260:1);
+        ctx.save();ctx.globalAlpha=Math.max(0,Math.min(1,a));
+        ctx.textAlign='center';
+        ctx.fillStyle=banner.color || (banner.text==='BRACE!'?'#7bd389':'#ffd27a');
+        ctx.font='800 38px "Iowan Old Style",Georgia,serif';
+        ctx.fillText(banner.text,W/2,H*0.34);
+        ctx.restore();ctx.textAlign='left';
+      }
+    }
+    // floating combat numbers (power/accuracy/damage/defence), rise and fade
+    for(let i=floats.length-1;i>=0;i--){const fl=floats[i];
+      const age=time-fl.t0; if(age<0) continue;
+      if(age>fl.life){floats.splice(i,1);continue;}
+      const al=age<140?age/140:(age>fl.life-450?(fl.life-age)/450:1);
+      const yy=fl.baseY-(age/fl.life)*30;
+      ctx.save();ctx.globalAlpha=Math.max(0,al);ctx.textAlign='center';
+      ctx.font=`800 ${fl.size}px system-ui,sans-serif`;
+      ctx.lineWidth=3;ctx.strokeStyle='rgba(0,0,0,.55)';ctx.strokeText(fl.text,fl.x,yy);
+      ctx.fillStyle=fl.color;ctx.fillText(fl.text,fl.x,yy);
+      ctx.restore();ctx.textAlign='left';
+    }
+  }
+  function easeIn(t){return t*t*(3-2*t);}
+
+  // ---------- buttons ----------
+  const over=document.getElementById('over');
+  document.getElementById('again').addEventListener('click',()=>newMatch(you.hp>0));
+  document.getElementById('how').addEventListener('click',()=>{
+    coach("Damage = <b>power × aim × timing</b>. More power hits harder and faster but your aim shakes more and <b>drifts the longer you hold</b> — commit while steady, when the scar faces you. When they swing back, <b>tap to brace</b> as it lands.");
+  });
+
+  // ---------- settings / controls panel ----------
+  const setPanel=document.getElementById('settings');
+  document.getElementById('settingsBtn').addEventListener('click',()=>{ updateSensorUI(); setPanel.classList.add('show'); });
+  document.getElementById('setClose').addEventListener('click',()=>setPanel.classList.remove('show'));
+  document.querySelectorAll('#segMode button').forEach(b=>b.addEventListener('click',()=>{
+    controlMode=b.dataset.mode;
+    document.querySelectorAll('#segMode button').forEach(x=>x.classList.toggle('on',x===b));
+    coach(controlMode==='motion'
+      ? "Motion mode: <b>tilt to aim</b>, <b>swing the phone</b> to strike. Tap to brace."
+      : "Touch mode: <b>pull down &amp; back</b> to wind up, release to swing.");
+  }));
+  document.getElementById('enableMotion').addEventListener('click',()=>{
+    enableMotion();
+    document.getElementById('enableMotion').textContent='Listening for motion…';
+    setTimeout(updateSensorUI,400); setTimeout(updateSensorUI,1500);
+  });
+  document.getElementById('gyroToggle').addEventListener('click',function(){
+    if(!sensors.gyro) return;
+    useGyro=!useGyro; this.textContent=useGyro?'On':'Off'; this.classList.toggle('on',useGyro);
+  });
+  document.getElementById('sens').addEventListener('input',function(){ motionSens=parseFloat(this.value); });
+
+  // ---------- boot ----------
+  resize();
+  newMatch(false);
+  if(typeof setInterval==='function') setInterval(setDiag,150);   // live sensor diagnostics
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
