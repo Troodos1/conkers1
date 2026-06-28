@@ -112,7 +112,7 @@
   #stAccel.ok,#stGyro.ok{color:#7bd389}
   .toggle{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px}
   .toggle.disabled{opacity:.4;pointer-events:none}
-  #gyroToggle.on{background:var(--ember);color:#2a1608}
+  #gyroToggle.on,#soundToggle.on{background:var(--ember);color:#2a1608}
   .note{font-size:10.5px;color:var(--muted);margin-top:6px;line-height:1.4}
   input[type=range]{width:100%;accent-color:var(--ember)}
   @media (prefers-reduced-motion:reduce){*{animation:none!important}}
@@ -151,23 +151,47 @@
         <h3>Controls</h3>
         <div class="setsub">Choose how you swing. In a real match every player must use the same scheme.</div>
         <div class="set-row">
+          <div class="lbl">Opponent</div>
+          <div class="seg" id="segOpp">
+            <button data-opp="bot" class="on">Practice (Bot)</button>
+            <button data-opp="online">2 Players</button>
+          </div>
+          <div class="note" id="oppNote">Practice against the computer — play offline, anytime.</div>
+        </div>
+        <div class="set-row" id="lobby" style="display:none">
+          <div class="seg" style="margin-bottom:8px">
+            <button class="ghost" id="hostBtn">Host a game</button>
+            <button class="ghost" id="joinBtn">Join a game</button>
+          </div>
+          <div id="joinRow" style="display:none;margin-bottom:8px">
+            <input id="codeInput" maxlength="4" placeholder="ENTER CODE" autocapitalize="characters"
+              style="width:100%;text-align:center;letter-spacing:.3em;text-transform:uppercase;padding:10px;border-radius:9px;border:1px solid rgba(184,155,110,.3);background:var(--surface);color:var(--text);font:700 18px system-ui">
+            <button class="ghost" id="connectBtn" style="width:100%;margin-top:8px">Connect</button>
+          </div>
+          <div id="codeShow" style="display:none;text-align:center;margin-bottom:8px">
+            <div class="lbl" style="text-align:center">Give this code to the other player</div>
+            <div id="codeBig" style="font:800 30px system-ui;letter-spacing:.3em;color:var(--ember)">— — — —</div>
+          </div>
+          <div class="statrow"><span>Status</span><span id="netStat" class="no">not connected</span></div>
+          <div class="note">Both phones need internet for this online test. The offline Bluetooth version comes later — the game itself won't change.</div>
+        </div>
+        <div class="toggle" style="margin-bottom:14px">
+          <span class="lbl" style="margin:0">Sound effects</span>
+          <button class="ghost on" id="soundToggle">On</button>
+        </div>
+        <div class="set-row">
           <div class="lbl">Input</div>
           <div class="seg" id="segMode">
-            <button data-mode="touch" class="on">Touch / pull-back</button>
-            <button data-mode="motion">Motion (swing)</button>
+            <button data-mode="touch" class="on">Touch</button>
+            <button data-mode="motion">Tilt + pull</button>
           </div>
+          <div class="note" id="modeNote">Touch: drag to aim &amp; set power. Tilt + pull: tilt the phone to aim, drag back to set power, release to strike.</div>
         </div>
         <div class="set-row" id="motionSetup">
-          <button class="ghost" id="enableMotion" style="width:100%;margin-bottom:10px">Enable motion sensors</button>
-          <div class="statrow"><span>Accelerometer</span><span id="stAccel" class="no">not detected</span></div>
-          <div class="statrow"><span>Gyroscope</span><span id="stGyro" class="no">not detected</span></div>
-          <div class="toggle" id="gyroRow">
-            <span class="lbl" style="margin:0">Use gyro for spin</span>
-            <button class="ghost" id="gyroToggle">Off</button>
-          </div>
-          <div class="note">If any player has no gyro, the whole match falls back to accelerometer only.</div>
+          <button class="ghost" id="enableMotion" style="width:100%;margin-bottom:10px">Enable tilt sensor</button>
+          <div class="statrow"><span>Tilt sensor (aim)</span><span id="stTilt" class="no">waiting…</span></div>
           <div style="margin-top:12px">
-            <div class="lbl">Swing sensitivity</div>
+            <div class="lbl">Aim sensitivity</div>
             <input type="range" id="sens" min="0.6" max="1.7" step="0.05" value="1">
           </div>
           <div class="lbl" style="margin-top:14px">Sensor diagnostics</div>
@@ -239,12 +263,43 @@
 
   // ---------- game state ----------
   const ST = {AIM:'aim',STRIKE:'strike',FOEWIND:'foewind',FOE:'foe',OVER:'over'};
-  let state, you, foe, charging, pull, aimPhase, foeAnim, fx, shake, t0, lastSwing, chargeStart, aimBase, aimTarget, pressStart, brace, braceFlash=0, flash=0, banner=null, foeWind=null, roundLog=null, floats=[], twitch=null;
+  let state, you, foe, charging, pull, aimPhase, foeAnim, fx, shake, t0, lastSwing, chargeStart, aimBase, aimTarget, pressStart, brace, braceFlash=0, flash=0, banner=null, foeWind=null, roundLog=null, floats=[], twitch=null, pows=[], chunks=[], shattered=null;
   // ---- control scheme / motion sensors ----
   let controlMode='touch', motionOn=false, useGyro=false, motionSens=1, swingCd=0;
-  const sensors={accel:false, gyro:false};
+  const sensors={accel:false, gyro:false, orient:false};
   const mo={grav:{x:0,y:0,z:0}, smoothMag:0, peak:0, swinging:false, gamma:0, lastSpin:0};
   const diag={secure:false, state:'not started', motion:0, orient:0, accel:0, tilt:0, err:'none'};
+
+  // ---------- sound effects (Web Audio, synthesised — no audio files) ----------
+  let actx=null, soundOn=true;
+  function audioUnlock(){ try{ if(!actx){ const AC=window.AudioContext||window.webkitAudioContext; if(AC) actx=new AC(); } if(actx&&actx.state==='suspended') actx.resume(); }catch(e){} }
+  function aTone(freq,t0,dur,type,peak,f1){
+    if(!actx||!soundOn)return; const c=actx, now=c.currentTime+t0;
+    const o=c.createOscillator(), g=c.createGain();
+    o.type=type||'sine'; o.frequency.setValueAtTime(freq,now);
+    if(f1) o.frequency.exponentialRampToValueAtTime(Math.max(1,f1),now+dur);
+    g.gain.setValueAtTime(0.0001,now); g.gain.exponentialRampToValueAtTime(peak||0.2,now+0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001,now+dur);
+    o.connect(g).connect(c.destination); o.start(now); o.stop(now+dur+0.03);
+  }
+  function aNoise(dur,t0,peak,ftype,ffreq,q,framp){
+    if(!actx||!soundOn)return; const c=actx, now=c.currentTime+t0;
+    const n=Math.max(1,Math.floor(c.sampleRate*dur)), buf=c.createBuffer(1,n,c.sampleRate), d=buf.getChannelData(0);
+    for(let i=0;i<n;i++) d[i]=Math.random()*2-1;
+    const s=c.createBufferSource(); s.buffer=buf;
+    const g=c.createGain(); g.gain.setValueAtTime(peak||0.2,now); g.gain.exponentialRampToValueAtTime(0.0001,now+dur);
+    let node=s;
+    if(ftype){ const f=c.createBiquadFilter(); f.type=ftype; f.frequency.setValueAtTime(ffreq||1200,now);
+      if(framp) f.frequency.exponentialRampToValueAtTime(Math.max(50,framp),now+dur); f.Q.value=q||1; s.connect(f); node=f; }
+    node.connect(g).connect(c.destination); s.start(now); s.stop(now+dur+0.03);
+  }
+  function sfxWhoosh(power){ aNoise(0.16,0,0.05+0.06*(power||0),'bandpass',500,0.7,1500); }   // the conker leaves the hand
+  function sfxCrack(strong){ aNoise(0.07,0,strong?0.45:0.3,'highpass',1400,0.7); aTone(strong?110:150,0,0.13,'triangle',strong?0.4:0.28,strong?60:90); }
+  function sfxYelp(){ aTone(540,0,0.08,'triangle',0.22,900); aTone(880,0.06,0.12,'triangle',0.2,430); }   // little "ow!"
+  function sfxPhew(){ aNoise(0.3,0,0.13,'lowpass',1100,0.8,300); }                                       // sailed past
+  function sfxClash(){ aTone(2100,0,0.22,'square',0.12,1500); aTone(2790,0,0.2,'square',0.1,1900); aTone(3500,0,0.16,'triangle',0.08,2600); aNoise(0.05,0,0.2,'bandpass',3000,1.2); } // shield clang
+  function sfxBoo(){ aTone(300,0,0.4,'sawtooth',0.16,150); aTone(296,0.0,0.4,'sawtooth',0.12,150); aTone(452,0.02,0.36,'triangle',0.06,180); } // crowd "booo"
+  function sfxShatter(){ aTone(90,0,0.5,'triangle',0.5,40); aNoise(0.5,0,0.5,'lowpass',1600,0.6,200); aNoise(0.18,0,0.4,'highpass',2000,0.7); } // big crack + debris
 
   function freshConker(score){const m=maxHpFor(score);return {hp:m,max:m,score:score};}
 
@@ -256,7 +311,7 @@
     foe.name = FOES[Math.floor(Math.random()*FOES.length)];
     document.getElementById('foeName').textContent = foe.name;
     charging=false; pull={x:0,y:0,len:0}; aimPhase=Math.random()*Math.PI*2;
-    foeAnim=null; fx=[]; shake=0; lastSwing=null; brace=null; braceFlash=0; flash=0; banner=null; foeWind=null; roundLog=null; floats=[]; twitch=null;
+    foeAnim=null; fx=[]; shake=0; lastSwing=null; brace=null; braceFlash=0; flash=0; banner=null; foeWind=null; roundLog=null; floats=[]; twitch=null; pows=[]; chunks=[]; shattered=null;
     document.getElementById('toast').classList.remove('show');
     state=ST.AIM;
     over.classList.remove('show');
@@ -268,7 +323,7 @@
   // ---------- layout anchors (in CSS px) ----------
   function anchors(){
     return {
-      foe:{x:W*0.5, y:H*0.16, swingR:Math.min(W,H)*0.20},
+      foe:{x:W*0.5, y:H*0.16, swingR:W*0.42},      // sways across most of the width — aiming must track it
       you:{x:W*0.5, y:H*0.70}
     };
   }
@@ -304,10 +359,11 @@
     if(state===ST.FOE){ e.preventDefault(); tryBrace(); return; }
     if(state===ST.FOEWIND && foeWind){ e.preventDefault(); flinch(); return; }
     if(state!==ST.AIM) return;
-    if(controlMode!=='touch') return;               // motion mode aims by tilt + swing, not drag
     e.preventDefault();
+    audioUnlock();
     const p=localPt(e); pressStart={x:p.x,y:p.y};   // grab anywhere — drag is measured from here
-    charging=true; pull={x:0,y:0,len:0}; chargeStart=performance.now(); aimBase=aimTarget=-Math.PI/2;
+    charging=true; pull={x:0,y:0,len:0}; chargeStart=performance.now();
+    if(controlMode==='touch') aimBase=aimTarget=-Math.PI/2;   // touch: drag sets aim too. motion: aim stays on tilt
   }
   function move(e){
     if(!charging) return;
@@ -317,6 +373,12 @@
     const max=Math.min(W,H)*0.24;
     let len=Math.hypot(dx,dy);
     if(len<0.0001){pull={x:0,y:0,len:0};return;}
+    if(controlMode!=='touch'){
+      // motion: pull-back is PURE POWER — direction is ignored, tilt does the aiming
+      if(len>max) len=max;
+      pull={x:0,y:len,len:len/max};
+      return;
+    }
     // you can only wind BACK (downward, away from the foe above) — clamp into a downward cone
     let ang=Math.atan2(dy,dx);                 // +PI/2 = straight down
     const downC=Math.PI/2, cone=1.22;          // ±70°
@@ -388,17 +450,9 @@
     }catch(err){ diag.err='Sensor API: '+err.message; }
   }
   function processDynAccel(ax,ay,az){
-    diag.accel=Math.hypot(ax,ay,az);
+    diag.accel=Math.hypot(ax,ay,az);                 // kept for the diagnostics readout only
     if(!sensors.accel){ sensors.accel=true; updateSensorUI(); }
-    mo.smoothMag=mo.smoothMag*0.55+diag.accel*0.45;
-    const startT=14/motionSens, endT=7/motionSens;
-    if(controlMode==='motion' && motionOn && state===ST.AIM && performance.now()>swingCd){
-      if(!mo.swinging && mo.smoothMag>startT){ mo.swinging=true; mo.peak=mo.smoothMag; }
-      else if(mo.swinging){
-        mo.peak=Math.max(mo.peak,mo.smoothMag);
-        if(mo.smoothMag<endT){ mo.swinging=false; fireMotionSwing(mo.peak); swingCd=performance.now()+650; }
-      }
-    } else { mo.swinging=false; }
+    // (the strike is now the finger pull-back, so jostling the phone never launches)
   }
   function onMotion(e){
     diag.motion++;
@@ -416,10 +470,12 @@
   function onOrient(e){
     diag.orient++;
     if(e.gamma==null) return;
+    if(!sensors.orient){ sensors.orient=true; updateSensorUI(); }
     mo.gamma=e.gamma; diag.tilt=e.gamma;                // left-right tilt, -90..90
     if(controlMode==='motion' && state===ST.AIM){
-      const t=Math.max(-1,Math.min(1, e.gamma/35));     // map tilt to the aim cone
-      aimTarget=-Math.PI/2 + t*1.0;
+      const span=32/motionSens;                         // higher sensitivity = less tilt needed
+      const t=Math.max(-1,Math.min(1, e.gamma/span));
+      aimTarget=-Math.PI/2 + t*0.62;                    // map tilt across the foe's travel (±~36°)
     }
   }
   function setDiag(){
@@ -433,20 +489,76 @@
     S('dTilt').textContent=Math.round(diag.tilt)+'°';
     S('dErr').textContent=diag.err; S('dErr').className=(diag.err&&diag.err!=='none')?'no':'ok';
   }
-  function fireMotionSwing(peak){
-    const power=Math.max(0.12, Math.min(1,(peak-8)/22));   // normalise swing strength to power
-    pull={x:0,y:0,len:power};
-    if(aimBase===undefined) aimBase=aimTarget;
-    chargeStart=performance.now();                         // no hold-tremor for a ballistic swing
-    launch();
-  }
   function updateSensorUI(){
-    const A=document.getElementById('stAccel'), G=document.getElementById('stGyro');
-    if(A){ A.textContent=sensors.accel?'detected':'waiting for a sample…'; A.className=sensors.accel?'ok':'no'; }
-    if(G){ G.textContent=sensors.gyro?'detected':'none on this device'; G.className=sensors.gyro?'ok':'no'; }
-    const row=document.getElementById('gyroRow');
-    if(row) row.classList.toggle('disabled', !sensors.gyro);
-    if(!sensors.gyro){ useGyro=false; const gt=document.getElementById('gyroToggle'); if(gt){gt.textContent='Off';gt.classList.remove('on');} }
+    const T=document.getElementById('stTilt');
+    if(T){ T.textContent=sensors.orient?'detected — ready':'waiting…'; T.className=sensors.orient?'ok':'no'; }
+  }
+
+  // ---------- networking (online transport now; the same packets ride Bluetooth later) ----------
+  // The game only ever asks the transport to send/receive small JSON packets, so swapping
+  // PeerJS for native Nearby Connections later means rewriting just this block.
+  let opponent='bot';                       // 'bot' | 'online'
+  const net={ peer:null, conn:null, role:null, connected:false, code:null, seed:null, oppName:null, onPacket:null };
+  const HANDLES=['Bramble','Knuckle','Spike','Ironside','Old Oak','Thwack','Cracker','Gnarls'];
+  function myHandle(){ if(!net._h) net._h=HANDLES[(Math.random()*HANDLES.length)|0]; return net._h; }
+  function netStat(msg,cls){ const e=document.getElementById('netStat'); if(e){e.textContent=msg; e.className=cls||'';} }
+  function randCode(){ const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s=''; for(let i=0;i<4;i++)s+=A[(Math.random()*A.length)|0]; return s; }
+  function loadPeerJS(cb){
+    if(window.Peer){ cb(); return; }
+    netStat('loading connection library…');
+    const s=document.createElement('script');
+    s.src='https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
+    s.onload=()=>cb();
+    s.onerror=()=>netStat('couldn’t load — check internet','no');
+    document.head.appendChild(s);
+  }
+  function hostGame(){
+    loadPeerJS(()=>{
+      net.role='host'; net.code=randCode();
+      try{ net.peer=new Peer('conkersduel-'+net.code); }catch(e){ netStat('error: '+e.message,'no'); return; }
+      net.peer.on('open',()=>{ showCode(net.code); netStat('waiting for a player to join…'); });
+      net.peer.on('connection',c=>{ net.conn=c; wireConn(); });
+      net.peer.on('error',e=>netStat('error: '+(e.type||e.message),'no'));
+    });
+  }
+  function joinGame(code){
+    loadPeerJS(()=>{
+      net.role='join';
+      try{ net.peer=new Peer(); }catch(e){ netStat('error: '+e.message,'no'); return; }
+      net.peer.on('open',()=>{ netStat('connecting…'); net.conn=net.peer.connect('conkersduel-'+code,{reliable:true}); wireConn(); });
+      net.peer.on('error',e=>netStat('error: '+(e.type==='peer-unavailable'?'no game with that code':e.type),'no'));
+    });
+  }
+  function wireConn(){
+    net.conn.on('open',()=>{
+      net.connected=true;
+      if(net.role==='host'){ net.seed=(Math.random()*1e9)|0; netSend({t:'hello',name:myHandle(),seed:net.seed}); }
+      else { netSend({t:'hello',name:myHandle()}); }
+    });
+    net.conn.on('data',d=>{ let m; try{m=JSON.parse(d);}catch(e){return;} handlePacket(m); });
+    net.conn.on('close',()=>{ net.connected=false; netStat('player disconnected','no'); });
+  }
+  function netSend(obj){ try{ if(net.conn&&net.conn.open) net.conn.send(JSON.stringify(obj)); }catch(e){} }
+  function handlePacket(m){
+    if(m.t==='hello'){
+      net.oppName=m.name||'Player';
+      if(m.seed!=null) net.seed=m.seed;                 // host is authoritative for the shared seed
+      if(net.role==='host' && net.seed!=null) netSend({t:'seed',seed:net.seed}); // make sure joiner has it
+      onConnectedReady();
+    } else if(m.t==='seed'){ net.seed=m.seed; onConnectedReady(); }
+    else if(net.onPacket){ net.onPacket(m); }            // gameplay packets (wired in the next pass)
+  }
+  function onConnectedReady(){
+    if(net.seed==null||!net.oppName) return;
+    netStat('connected to '+net.oppName+'  ·  sync '+(net.seed%10000),'ok');
+    // shared seed drives a deterministic sway both phones can verify is identical
+    foeSwayPhase = (net.seed % 6283) / 1000;
+    // (next pass: start the live net duel here)
+  }
+  function showCode(code){
+    document.getElementById('codeShow').style.display='block';
+    document.getElementById('joinRow').style.display='none';
+    document.getElementById('codeBig').textContent=code.split('').join(' ');
   }
 
   // current aim direction = opposite of pull (slingshot), with a power-driven sway you must time
@@ -460,7 +572,7 @@
   function aimDir(time){
     const base = (aimBase!==undefined)?aimBase:Math.atan2(-pull.y,-pull.x); // smoothed — kills low-power jitter
     const tremor = heldTremor(time);
-    const wobbleAmp = 0.04 + pull.len*0.30 + tremor; // shakier the harder you wind up...
+    const wobbleAmp = 0.015 + pull.len*0.10 + tremor; // much tighter now — far less drift at both low and high power
     const wob = Math.sin(time*0.006 + aimPhase)*wobbleAmp
               + Math.sin(time*0.013 + aimPhase*1.7)*tremor*0.6; // ...and the longer you dawdle
     return base + wob;
@@ -473,43 +585,49 @@
     const r=Math.min(W,H)*0.085;
     const dir=aimDir(time);
     const power=pull.len;
-    // launch ORIGIN = where you wound the conker back to. More power = further back = longer, harder shot.
-    const O={x:a.you.x, y:a.you.y};            // constant runway — always launch from the fixed spot
+    const O={x:a.you.x, y:a.you.y};                // constant runway — always launch from the fixed spot
     const dx=Math.cos(dir), dy=Math.sin(dir);
-    // project the swing line up to the foe's height; how far does it land from the foe?
-    let xCross=O.x, miss=99999;
-    if(dy<-0.02){
-      const tcross=(fp.y-O.y)/dy;                 // flight distance to the foe (grows with power)
-      xCross=O.x+dx*tcross;
-      miss=Math.abs(xCross-fp.x);                 // sideways miss, amplified by distance
-    }
-    const hitWin=r*1.3;                            // land within ~1.3 conker-radii to connect
-    const aimScore=Math.max(0,1-miss/hitWin);
-    const connect=aimScore>0;                      // outside the window = a clean miss
-    const exposure=foeExposure(time);              // timing — scar facing you
+    // the point your line crosses the foe's height — this is the spot you've committed the conker to
+    let xCross=O.x;
+    if(dy<-0.02){ const tcross=(fp.y-O.y)/dy; xCross=O.x+dx*tcross; }
+    const aimPoint={x:xCross, y:fp.y};
+    sfxWhoosh(power);
+    // store the shot; the hit is judged later, when the conker ARRIVES (so a moving target must be led)
+    lastSwing={power,dir,origin:O,aimPoint,fireTime:time,from:'you'};
+    runStrike(resolvePlayerImpact);
+  }
 
-    // THE SWING PACKET — exactly what one phone would send the other.
+  // judged at the moment of arrival — did the foe sway into the spot you committed to?
+  function resolvePlayerImpact(){
+    const time=performance.now();
+    const r=Math.min(W,H)*0.085;
+    const fp=foePos(time);                          // where the foe actually is on arrival
+    const power=lastSwing.power, dir=lastSwing.dir;
+    const miss=Math.abs(lastSwing.aimPoint.x - fp.x);
+    const hitWin=r*1.5;                             // a touch more forgiving, since the target now moves in flight
+    const aimScore=Math.max(0,1-miss/hitWin);
+    const connect=aimScore>0;
+    const exposure=foeExposure(time);              // timing — is the scar facing you as it lands?
+
     const packet={power:+power.toFixed(3),angle:+dir.toFixed(3),exposure:+exposure.toFixed(3),seed:(Math.random()*1e6)|0};
     console.log('SWING PACKET →',packet);
 
-    // resolve (both devices run this same function on the packet)
-    let dmg=0, label='miss', crit=false;
+    let dmg=0,label='miss',crit=false;
     if(connect){
       const base=40;
-      dmg = base * power * aimScore * (0.55+0.45*exposure);
-      crit = power>0.6 && aimScore>0.8 && exposure>0.78;
-      if(crit) dmg*=1.4;
+      dmg=base*power*aimScore*(0.55+0.45*exposure);
+      crit=power>0.6 && aimScore>0.8 && exposure>0.78;
+      if(crit)dmg*=1.4;
       dmg=Math.max(1,Math.round(dmg));
-      label = crit?'crit':(aimScore>0.7?'hit':'graze');
+      label=crit?'crit':(aimScore>0.7?'hit':'graze');
     }
-    // the point the conker actually arrives at — the foe if it connects, otherwise off to the side
-    const impact = connect ? {x:fp.x,y:fp.y} : {x:xCross, y:fp.y};
-    lastSwing={power,aimScore,exposure,dmg,crit,label,connect,dir,origin:O,impact,from:'you',targetAtFire:fp};
-    runStrike(()=>{
-      if(connect) applyDamage(foe,dmg,crit,impact);
-      else missFx(impact);
-      afterPlayer(aimScore,dmg,crit,label,connect);
-    });
+    const impact = connect ? {x:fp.x,y:fp.y} : {x:lastSwing.aimPoint.x,y:lastSwing.aimPoint.y};
+    Object.assign(lastSwing,{aimScore,exposure,dmg,crit,label,connect,impact,targetAtFire:fp});
+    if(connect){ applyDamage(foe,dmg,crit,impact); sfxCrack(crit); sfxYelp();
+      if(crit) spawnPow(impact.x,impact.y,'POW!');
+      else if(label==='hit') spawnPow(impact.x,impact.y,'BIFF!'); }
+    else { missFx(impact); sfxPhew(); }
+    afterPlayer(aimScore,dmg,crit,label,connect);
   }
 
   // a clean miss: a little dust puff where the conker sailed past, no damage
@@ -518,13 +636,13 @@
     for(let i=0;i<8;i++)fx.push({x:at.x,y:at.y,vx:(Math.random()-.5)*2.4,vy:-Math.random()*2.2,life:1,r:2.2,whiff:true});
   }
 
-  // animate player's conker arcing up to the target, then callback at impact
+  // animate player's conker travelling up to the committed spot, then judge at arrival
   function runStrike(onImpact){
     state=ST.STRIKE;
     const time=performance.now();
     const start = lastSwing.origin || {x:anchors().you.x,y:anchors().you.y};
-    const tgt = lastSwing.impact || lastSwing.targetAtFire;
-    const dur = 360 * (1.2 - 0.4*(lastSwing.power||0));  // max power ~20% faster, min ~20% slower
+    const tgt = lastSwing.aimPoint || lastSwing.targetAtFire;
+    const dur = 780;                                // constant flight (the fast conker) — power only changes damage & sway
     foeAnim={kind:'player',start,tgt,t0:time,dur,onImpact,fired:false};
     setStats(lastSwing); // show the read-out as it leaves the hand
   }
@@ -540,8 +658,9 @@
     if(connect) spawnFloat(fp.x, fp.y-r*1.3, `−${dmg}`, '#ff6a4a', 18);
     else spawnFloat(fp.x, fp.y-r*1.3, 'MISS', '#b0a08c', 14);
     toast(playerBlowLine(roundLog.p));
-    if(foe.hp<=0){return endMatch(true);}
-    scheduleFoeWind();
+    if(foe.hp<=0){return killConker('foe');}
+    state=ST.FOEWIND; foeWind=null;                 // lock input while your result reads, before the foe steps up
+    setTimeout(beginFoeTurn, 1600);                 // wait for your turn's messages before the foe readies
   }
   function playerBlowLine(p){
     if(!p.connect) return `Swing and a miss!`;
@@ -550,13 +669,21 @@
     return `Caught the edge — <b>${p.dmg}</b>.`;
   }
 
+  // foe's turn is announced clearly first, THEN the wind-up power bar appears
+  function beginFoeTurn(){
+    if(state!==ST.FOEWIND) return;
+    banner={text:`${foe.name.toUpperCase()}’S TURN`, t:performance.now(), life:1300};
+    coach(`<b>${foe.name}</b> steps up — watch the power bar, then <b>brace</b> as it swings.`);
+    setTimeout(()=>{ if(state===ST.FOEWIND) scheduleFoeWind(); }, 1100);
+  }
+
   // ---------- foe winds up (telegraphed by a charging bar), then swings ----------
   function scheduleFoeWind(){
     state=ST.FOEWIND;
     const power=0.40+Math.random()*0.58;           // this swing's power — shown by the wind-up bar
-    const fillDur=650, holdDur=700+Math.random()*2600;  // suspense lives in the random hold
+    const fillDur=750, holdDur=700+Math.random()*2400;  // suspense lives in the random hold
     foeWind={power,t0:performance.now(),fillDur,holdDur,timer:null};
-    flash=1; banner={text:`${foe.name.toUpperCase()} WINDS UP`, t:performance.now(), life:1100};
+    flash=1; banner={text:`${foe.name.toUpperCase()} TAKES AIM`, t:performance.now(), life:1100};
     foeWind.timer=setTimeout(()=>{ if(state===ST.FOEWIND && foeWind) foeSwing(power); }, fillDur+holdDur);
   }
 
@@ -577,13 +704,15 @@
     foeAnim={kind:'foe',start:{...foePos(time)},tgt:{x:a.you.x,y:a.you.y},t0:time,dur,fired:false,
       onImpact:()=>{
         const final=Math.round(dmg*brace.mit);
+        if(brace.result==='perfect' || brace.result==='good'){ sfxClash(); }
+        else { sfxCrack(crit&&brace.mit>0.6); sfxYelp(); }
         applyDamage(you,final,crit&&brace.mit>0.6,a.you);
         if(brace.result==='perfect' && foe.hp>0) applyDamage(foe,6,false,foePos(performance.now())); // rebound
         brace.armed=false;
         roundLog.f.final=final; roundLog.f.brace=brace.result;
         spawnExchangeFloats();
         toast(defenceLine(roundLog.f), Math.random()<0.5?randQuip():null);
-        if(you.hp<=0){return endMatch(false);}
+        if(you.hp<=0){return killConker('you');}
         setTimeout(()=>{ if(state===ST.FOE){ state=ST.AIM; coach("Your turn — <b>wind up</b> and let it fly."); } }, 750);
       }};
     coach(`<b>${foe.name}</b> swings — <b>tap to brace!</b>`);
@@ -621,12 +750,37 @@
     floats.push({x,baseY:y,text,color,size:size||14,t0:performance.now(),life:1700});
     if(floats.length>24) floats.splice(0,floats.length-24);
   }
+  function spawnPow(x,y,text){ pows.push({x,y,text:text||'POW!',t0:performance.now(),life:620,rot:(Math.random()-0.5)*0.4}); }
+  function drawPows(time){
+    for(let i=pows.length-1;i>=0;i--){
+      const p=pows[i], k=(time-p.t0)/p.life;
+      if(k>=1){ pows.splice(i,1); continue; }
+      const pop=k<0.25?(k/0.25):1, scale=(0.4+pop*0.9)*(1+0.12*Math.sin(k*30)), alpha=k<0.7?1:1-(k-0.7)/0.3;
+      const R=Math.min(W,H)*0.12*scale;
+      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.globalAlpha=alpha;
+      // jagged red starburst
+      ctx.beginPath();
+      const spikes=12;
+      for(let s=0;s<spikes*2;s++){ const ang=Math.PI*s/spikes, rr=(s%2?R*0.55:R); const px=Math.cos(ang)*rr, py=Math.sin(ang)*rr; s?ctx.lineTo(px,py):ctx.moveTo(px,py); }
+      ctx.closePath();
+      ctx.fillStyle='#e23a2e'; ctx.fill();
+      ctx.lineWidth=3; ctx.strokeStyle='#ffd23f'; ctx.stroke();
+      // text
+      ctx.fillStyle='#fff'; ctx.font=`900 ${Math.round(R*0.62)}px system-ui,sans-serif`;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.lineWidth=Math.max(2,R*0.06); ctx.strokeStyle='#2a0a06'; ctx.strokeText(p.text,0,R*0.04);
+      ctx.fillText(p.text,0,R*0.04);
+      ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+      ctx.restore();
+    }
+  }
 
   // defending during the wind-up = a premature flinch: lose a little life, get ribbed, swing replays
   const FLINCH_QUIPS=["Twitchy! You braced thin air.","Jumped the gun — settle down.","Itchy trigger finger, that one.","Premature! The crowd winces.","Flinched at a shadow."];
   function flinch(){
     if(foeWind&&foeWind.timer) clearTimeout(foeWind.timer);
     foeWind=null;
+    sfxBoo();
     const r=Math.min(W,H)*0.085, a=anchors();
     you.hp=Math.max(0,you.hp-5); syncHud();
     twitch={t0:performance.now()}; shake=8;
@@ -634,7 +788,7 @@
     toast(FLINCH_QUIPS[Math.floor(Math.random()*FLINCH_QUIPS.length)]);
     banner={text:'READY UP AGAIN', t:performance.now(), life:1500, color:'#ff8a5a'};
     coach("You twitched early! <b>−5</b> — wait for the swing next time.");
-    if(you.hp<=0){ return endMatch(false); }
+    if(you.hp<=0){ return killConker('you'); }
     setTimeout(()=>{ if(state===ST.FOEWIND && !foeWind) scheduleFoeWind(); }, 1200);
   }
 
@@ -661,11 +815,59 @@
     if(dmg>0){
       burst(at.x,at.y,crit?34:18,crit);
       shake=crit?16:Math.min(12,4+dmg*0.3);
+      // chips of shell fly off when struck with reasonable force
+      if(dmg>=9||crit){
+        const n=Math.min(10, 3+Math.floor(dmg/4));
+        for(let i=0;i<n;i++){ const a=Math.random()*Math.PI*2, sp=2+Math.random()*(crit?5:3.2);
+          fx.push({x:at.x,y:at.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-1.5,life:1,
+            chip:true,size:(crit?3.6:2.6)*Math.random()+1.6,rot:Math.random()*7,vr:(Math.random()-.5)*0.5,
+            col:Math.random()<0.6?'#6f3a1a':'#8a4a22'}); }
+      }
     } else {
       // whiff puff
       for(let i=0;i<6;i++)fx.push({x:at.x,y:at.y,vx:(Math.random()-.5)*2,vy:-Math.random()*2,life:1,r:2,whiff:true});
     }
     syncHud();
+  }
+
+  // ---------- death shatter: conker bursts into chunks, THEN the end screen ----------
+  function killConker(whoLost){
+    if(shattered) return;                            // already dying
+    const r=Math.min(W,H)*0.085;
+    const pos = whoLost==='foe' ? foePos(performance.now()) : anchors().you;
+    const tier = whoLost==='foe' ? tierOf(foe.score) : tierOf(you.score);
+    spawnShatter(pos.x,pos.y,r,tier);
+    sfxShatter(); sfxYelp(); shake=20;
+    shattered={who:whoLost, t0:performance.now()};
+    state='shatter';                                  // freezes input; nothing responds in this state
+    banner={text:'SHATTERED!', t:performance.now(), life:1100, color:'#ff6a4a'};
+    setTimeout(()=> endMatch(whoLost==='foe'), 1050); // let the pieces fly before the verdict
+  }
+  function spawnShatter(x,y,r,tier){
+    const T=TIERS[tier||0], cols=[T.shell[0],T.shell[1],T.shell[2],'#caa177'];
+    const n=22+((Math.random()*6)|0);
+    for(let i=0;i<n;i++){ const a=Math.random()*Math.PI*2, sp=2.5+Math.random()*7;
+      chunks.push({x:x+(Math.random()-.5)*r*0.6, y:y+(Math.random()-.5)*r*0.6,
+        vx:Math.cos(a)*sp, vy:Math.sin(a)*sp-3.5, g:0.32,
+        size:r*(0.12+Math.random()*0.26), rot:Math.random()*7, vr:(Math.random()-.5)*0.7,
+        col:cols[(Math.random()*cols.length)|0], t0:performance.now(), life:1000,
+        verts:3+((Math.random()*3)|0)}); }
+    // a burst of dust with it
+    burst(x,y,30,true);
+  }
+  function drawChunks(time){
+    for(let i=chunks.length-1;i>=0;i--){ const c=chunks[i], age=time-c.t0;
+      if(age>c.life){ chunks.splice(i,1); continue; }
+      c.x+=c.vx; c.y+=c.vy; c.vy+=c.g; c.vx*=0.99; c.rot+=c.vr;
+      const al = age<c.life*0.7 ? 1 : 1-(age-c.life*0.7)/(c.life*0.3);
+      ctx.save(); ctx.globalAlpha=Math.max(0,al); ctx.translate(c.x,c.y); ctx.rotate(c.rot);
+      ctx.fillStyle=c.col; ctx.beginPath();
+      const v=c.verts; for(let k=0;k<v;k++){ const ang=Math.PI*2*k/v, rr=c.size*(0.7+0.5*Math.sin(k*2.3)); const px=Math.cos(ang)*rr, py=Math.sin(ang)*rr; k?ctx.lineTo(px,py):ctx.moveTo(px,py); }
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle='rgba(20,10,4,.5)'; ctx.lineWidth=1; ctx.stroke();
+      ctx.restore();
+    }
+    ctx.globalAlpha=1;
   }
 
   // ---------- end / scoring (winner inherits loser's score +1) ----------
@@ -715,7 +917,7 @@
 
   // ---------- drawing ----------
   const SPECK=[[-.34,-.12],[.22,-.32],[.42,.12],[-.12,.34],[.14,.4],[-.44,.18],[.36,-.18],[-.26,-.38],[.06,-.18],[-.16,.06],[.3,.3],[-.4,-.02]];
-  function drawConker(x,y,r,hp,max,glow,tier){
+  function drawConker(x,y,r,hp,max,glow,tier,rot){
     tier=tier||0; const T=TIERS[tier];
     const rr=r*(T.size||1);
     const frac=hp/max;
@@ -735,7 +937,8 @@
     ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,rr,0,7);ctx.fill();
     // rim for definition (gold champion, ember legend, dark hardened, pale fresh)
     if(T.rim){ctx.strokeStyle=T.rim;ctx.lineWidth=Math.max(1.5,rr*0.06);ctx.beginPath();ctx.arc(0,0,rr-rr*0.03,0,7);ctx.stroke();}
-    // surface texture
+    // ---- surface features + scar rotate with the conker as it spins in flight ----
+    ctx.save(); ctx.rotate(rot||0);
     if(T.tex==='speck'){
       ctx.fillStyle='rgba(18,9,3,.32)';
       for(const s of SPECK){ctx.beginPath();ctx.arc(s[0]*rr,s[1]*rr,rr*0.045,0,7);ctx.fill();}
@@ -746,12 +949,18 @@
       for(const v of veins){ctx.beginPath();ctx.moveTo(v[0]*rr,v[1]*rr);ctx.lineTo(v[2]*rr,v[3]*rr);ctx.lineTo(v[4]*rr,v[5]*rr);ctx.stroke();}
       ctx.restore();
     }
-    // gloss highlight (brighter on polished tiers)
-    ctx.fillStyle=`rgba(255,228,180,${T.gloss||.32})`;
-    ctx.beginPath();ctx.ellipse(-rr*0.32,-rr*0.36,rr*0.28,rr*0.16,-0.6,0,7);ctx.fill();
     // scar / eye
     ctx.fillStyle=T.scar;ctx.beginPath();ctx.ellipse(0,rr*0.18,rr*0.42,rr*0.3,0,0,7);ctx.fill();
     ctx.fillStyle='#b89055';ctx.beginPath();ctx.ellipse(0,rr*0.20,rr*0.30,rr*0.20,0,0,7);ctx.fill();
+    drawDamage(rr,frac);                              // progressive cracks/chips ride the spin too
+    ctx.restore();
+    // ---- gloss / specular (fixed light source, so the spin reads against it) ----
+    ctx.fillStyle=`rgba(255,232,190,${(T.gloss||.32)+0.1})`;
+    ctx.beginPath();ctx.ellipse(-rr*0.34,-rr*0.38,rr*0.30,rr*0.17,-0.6,0,7);ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,.5)';
+    ctx.beginPath();ctx.arc(-rr*0.40,-rr*0.42,rr*0.085,0,7);ctx.fill();
+    ctx.strokeStyle='rgba(255,205,150,.16)';ctx.lineWidth=Math.max(1,rr*0.06);
+    ctx.beginPath();ctx.arc(0,0,rr*0.92,0.15*Math.PI,0.6*Math.PI);ctx.stroke();
     // rank emblems
     if(T.emblem==='scars'){
       ctx.strokeStyle='rgba(15,7,3,.6)';ctx.lineWidth=Math.max(1,rr*0.05);ctx.lineCap='round';
@@ -785,14 +994,35 @@
       ctx.fillStyle='#fff6d8';
       for(const tx of [-cw*0.18,0,cw*0.18]){ctx.beginPath();ctx.arc(tx,cy-rr*0.06,rr*0.035,0,7);ctx.fill();}
     }
-    // cracks as hp drops
-    ctx.strokeStyle='#0d0805';ctx.lineWidth=Math.max(1.4,rr*0.05);ctx.lineCap='round';
-    const cracks=Math.floor((1-frac)*4);
-    const seeds=[[-.2,-.5,.3,.4],[.4,-.3,-.2,.5],[-.5,.1,.2,-.4],[.1,.5,-.4,-.2]];
-    for(let i=0;i<cracks;i++){const s=seeds[i];ctx.beginPath();
-      ctx.moveTo(s[0]*rr,s[1]*rr);ctx.lineTo(s[2]*rr*0.5,s[3]*rr*0.5);ctx.lineTo(s[2]*rr,s[3]*rr);ctx.stroke();}
     if(glow){ctx.strokeStyle='rgba(242,160,61,.5)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,rr+5,0,7);ctx.stroke();}
     ctx.restore();
+  }
+  // progressive battle damage: pristine -> chipped, cracked and scuffed
+  function drawDamage(rr,frac){
+    if(frac>=0.85) return;
+    // worn scuff patches creep in
+    if(frac<0.62){ ctx.fillStyle='rgba(20,10,4,.20)';
+      const sc=[[-.3,.12],[.27,-.16],[.05,.36]], ns=Math.min(3,Math.floor((0.62-frac)*6));
+      for(let i=0;i<ns;i++){const s=sc[i];ctx.beginPath();ctx.ellipse(s[0]*rr,s[1]*rr,rr*0.22,rr*0.15,i,0,7);ctx.fill();}
+    }
+    // hairline -> deep cracks
+    ctx.strokeStyle='#0d0805';ctx.lineWidth=Math.max(1.2,rr*0.045);ctx.lineCap='round';
+    const cracks=Math.floor((1-frac)*6);
+    const cseeds=[[-.2,-.5,.3,.4],[.4,-.3,-.2,.5],[-.5,.1,.2,-.4],[.1,.5,-.4,-.2],[-.1,-.45,-.4,.2],[.45,.15,0,.5]];
+    for(let i=0;i<cracks&&i<cseeds.length;i++){const s=cseeds[i];ctx.beginPath();
+      ctx.moveTo(s[0]*rr,s[1]*rr);ctx.lineTo(s[2]*rr*0.5,s[3]*rr*0.5);ctx.lineTo(s[2]*rr,s[3]*rr);ctx.stroke();}
+    // chunks knocked clean off the rim, exposing pale flesh
+    const chips=Math.floor(Math.max(0,0.82-frac)*5), chSeed=[0.6,2.2,3.6,4.9,5.7];
+    for(let i=0;i<chips&&i<chSeed.length;i++){ const ang=chSeed[i], w=0.32+0.04*i;
+      ctx.fillStyle='#2a160b';ctx.beginPath();
+      ctx.moveTo(Math.cos(ang-w)*rr,Math.sin(ang-w)*rr);
+      ctx.lineTo(Math.cos(ang)*rr*0.66,Math.sin(ang)*rr*0.66);
+      ctx.lineTo(Math.cos(ang+w)*rr,Math.sin(ang+w)*rr);ctx.closePath();ctx.fill();
+      ctx.fillStyle='#c69b6a';ctx.beginPath();
+      ctx.moveTo(Math.cos(ang-w*0.55)*rr*0.95,Math.sin(ang-w*0.55)*rr*0.95);
+      ctx.lineTo(Math.cos(ang)*rr*0.76,Math.sin(ang)*rr*0.76);
+      ctx.lineTo(Math.cos(ang+w*0.55)*rr*0.95,Math.sin(ang+w*0.55)*rr*0.95);ctx.closePath();ctx.fill();
+    }
   }
   // a red pulsing ring when a conker is nearly shattered
   function lowLifeFx(x,y,r,frac,time){
@@ -920,18 +1150,20 @@
     ctx.beginPath();ctx.moveTo(W*0.3,a.foe.y-r*1.8);ctx.lineTo(W*0.7,a.foe.y-r*1.8);ctx.stroke();
 
     // ---- foe conker ----
-    let fpos=foePos(time);
+    let fpos=foePos(time); let fspin=0;
     if(foeAnim&&foeAnim.kind==='foe'){
       const p=Math.min(1,(time-foeAnim.t0)/foeAnim.dur);
       const e=p<0.5?p*2:1-(p-0.5)*2; // out & back
       fpos={x:foeAnim.start.x+(foeAnim.tgt.x-foeAnim.start.x)*easeIn(e),
             y:foeAnim.start.y+(foeAnim.tgt.y-foeAnim.start.y)*easeIn(e)};
+      fspin = (p<0.5? e : (1-e)) * Math.PI*2.2;     // tumbles out and unwinds on the way back
       if(!foeAnim.fired&&p>=0.5){foeAnim.fired=true;foeAnim.onImpact();}
       if(p>=1)foeAnim=null;
     }
     drawString(a.foe.x, a.foe.y-r*1.8, fpos.x, fpos.y);
     const exposingNow = state===ST.AIM && charging;
-    drawConker(fpos.x,fpos.y,r,foe.hp,foe.max, exposingNow && foeExposure(time)>0.78, tierOf(foe.score));
+    if(!(shattered&&shattered.who==='foe'))
+      drawConker(fpos.x,fpos.y,r,foe.hp,foe.max, exposingNow && foeExposure(time)>0.78, tierOf(foe.score), fspin);
     lowLifeFx(fpos.x,fpos.y,r,foe.hp/foe.max,time);
 
     // sweet-spot tell: subtle ring pulses when scar faces you during your wind-up
@@ -958,14 +1190,16 @@
 
     // ---- player conker ----
     let ypos={x:a.you.x,y:a.you.y};            // your conker stays put — power reads on the bar, not by moving
-    if(charging){ aimBase += (aimTarget-aimBase)*0.16; }
+    if(charging && controlMode==='touch'){ aimBase += (aimTarget-aimBase)*0.16; }
     const motionAiming = controlMode==='motion' && state===ST.AIM && !foeAnim;
-    if(motionAiming){ pull={x:0,y:0,len:0}; if(aimBase===undefined)aimBase=aimTarget; aimBase += (aimTarget-aimBase)*0.18; }
+    if(motionAiming){ if(!charging) pull={x:0,y:0,len:0}; if(aimBase===undefined)aimBase=aimTarget; aimBase += (aimTarget-aimBase)*0.18; }
+    let yspin=0;
     if(foeAnim&&foeAnim.kind==='player'){
       const p=Math.min(1,(time-foeAnim.t0)/foeAnim.dur);
       const e=p<0.5?p*2:1-(p-0.5)*2;
       ypos={x:foeAnim.start.x+(foeAnim.tgt.x-foeAnim.start.x)*easeIn(e),
             y:foeAnim.start.y+(foeAnim.tgt.y-foeAnim.start.y)*easeIn(e)};
+      yspin = p*Math.PI*3.0;                          // a couple of full tumbles across the flight
       if(!foeAnim.fired&&p>=0.5){foeAnim.fired=true;foeAnim.onImpact();}
       if(p>=1){foeAnim=null;}
     }
@@ -979,37 +1213,41 @@
 
     // while charging: aim line + steadiness ring + a power bar (the conker itself stays still)
     if(charging){
-      const dir=aimDir(time);
-      const reach=Math.min(W,H)*0.9;
-      const tremor=heldTremor(time);
-      const steady=1-tremor/TREMOR_MAX;          // 1 = rock steady, 0 = fully shaky
-      if(pull.len>=0.05){
-        ctx.save();
-        ctx.setLineDash([6,9]);ctx.lineWidth=2;
-        // amber when steady, shifting to red as the hand drifts
-        ctx.strokeStyle=`rgba(${242+(255-242)*(1-steady)|0}, ${160*steady+70*(1-steady)|0}, ${61*steady|0}, .6)`;
-        ctx.beginPath();ctx.moveTo(ypos.x,ypos.y);
-        ctx.lineTo(ypos.x+Math.cos(dir)*reach, ypos.y+Math.sin(dir)*reach);ctx.stroke();
-        ctx.restore();
-      }
-      // steadiness ring (drains as you dither)
-      if(tremor>0){
-        ctx.strokeStyle=`rgba(230,${90+120*steady|0},70,.85)`;ctx.lineWidth=3;ctx.lineCap='round';
-        ctx.beginPath();ctx.arc(ypos.x,ypos.y,r+12,-Math.PI/2,-Math.PI/2+steady*Math.PI*2);ctx.stroke();ctx.lineCap='butt';
+      if(controlMode==='touch'){
+        const dir=aimDir(time);
+        const reach=Math.min(W,H)*0.9;
+        const tremor=heldTremor(time);
+        const steady=1-tremor/TREMOR_MAX;          // 1 = rock steady, 0 = fully shaky
+        if(pull.len>=0.05){
+          ctx.save();
+          ctx.setLineDash([6,9]);ctx.lineWidth=2;
+          ctx.strokeStyle=`rgba(${242+(255-242)*(1-steady)|0}, ${160*steady+70*(1-steady)|0}, ${61*steady|0}, .6)`;
+          ctx.beginPath();ctx.moveTo(ypos.x,ypos.y);
+          ctx.lineTo(ypos.x+Math.cos(dir)*reach, ypos.y+Math.sin(dir)*reach);ctx.stroke();
+          ctx.restore();
+        }
+        if(tremor>0){
+          ctx.strokeStyle=`rgba(230,${90+120*steady|0},70,.85)`;ctx.lineWidth=3;ctx.lineCap='round';
+          ctx.beginPath();ctx.arc(ypos.x,ypos.y,r+12,-Math.PI/2,-Math.PI/2+steady*Math.PI*2);ctx.stroke();ctx.lineCap='butt';
+        }
       }
       drawPowerBar(pull.len);
     }
-    drawConker(ypos.x,ypos.y,r,you.hp,you.max, state===ST.AIM&&!charging, tierOf(you.score));
+    if(!(shattered&&shattered.who==='you'))
+      drawConker(ypos.x,ypos.y,r,you.hp,you.max, state===ST.AIM&&!charging, tierOf(you.score), yspin);
     lowLifeFx(ypos.x,ypos.y,r,you.hp/you.max,time);
 
-    // motion mode: continuous tilt-aim line + hint (no pull-back gesture)
+    // motion mode: tilt-aim line projected to the foe's row, with a reticle to help you lead
     if(motionAiming){
-      const dir=aimDir(time), reach=Math.min(W,H)*0.9;
-      ctx.save();ctx.setLineDash([6,9]);ctx.lineWidth=2;ctx.strokeStyle='rgba(242,160,61,.6)';
-      ctx.beginPath();ctx.moveTo(ypos.x,ypos.y);
-      ctx.lineTo(ypos.x+Math.cos(dir)*reach,ypos.y+Math.sin(dir)*reach);ctx.stroke();ctx.restore();
-      ctx.fillStyle='rgba(237,224,206,.55)';ctx.font='600 11px system-ui,sans-serif';ctx.textAlign='center';
-      ctx.fillText('Tilt to aim · swing to strike',W/2,a.you.y+r*2.4);ctx.textAlign='left';
+      const dir=aimDir(time), dx=Math.cos(dir), dy=Math.sin(dir);
+      let cx=ypos.x, cy=a.foe.y;
+      if(dy<-0.02){ const tcross=(a.foe.y-ypos.y)/dy; cx=ypos.x+dx*tcross; }
+      ctx.save();ctx.setLineDash([6,9]);ctx.lineWidth=2;ctx.strokeStyle='rgba(242,160,61,.55)';
+      ctx.beginPath();ctx.moveTo(ypos.x,ypos.y);ctx.lineTo(cx,cy);ctx.stroke();
+      ctx.setLineDash([]);ctx.strokeStyle='rgba(242,160,61,.9)';ctx.lineWidth=2;
+      ctx.beginPath();ctx.arc(cx,cy,r*0.55,0,7);ctx.stroke();ctx.restore();
+      ctx.fillStyle='rgba(237,224,206,.6)';ctx.font='600 11px system-ui,sans-serif';ctx.textAlign='center';
+      ctx.fillText(charging?'Release to strike':'Tilt to aim · drag back for power',W/2,a.you.y+r*2.4);ctx.textAlign='left';
     }
 
     // incoming-strike brace cue: a ring closes onto your conker, hotter as the perfect moment nears
@@ -1034,8 +1272,15 @@
       p.x+=p.vx;p.y+=p.vy;p.vy+=0.18;p.life-=0.026;
       if(p.life<=0){fx.splice(i,1);continue;}
       ctx.globalAlpha=Math.max(0,p.life);
-      ctx.fillStyle=p.whiff?'rgba(200,180,150,.5)':p.col;
-      ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,7);ctx.fill();
+      if(p.chip){ p.rot+=p.vr;
+        ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.rot);ctx.fillStyle=p.col;
+        ctx.beginPath();ctx.moveTo(-p.size,-p.size*0.6);ctx.lineTo(p.size,-p.size*0.3);
+        ctx.lineTo(p.size*0.5,p.size*0.7);ctx.lineTo(-p.size*0.7,p.size*0.5);ctx.closePath();ctx.fill();
+        ctx.restore();
+      } else {
+        ctx.fillStyle=p.whiff?'rgba(200,180,150,.5)':p.col;
+        ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,7);ctx.fill();
+      }
     }
     ctx.globalAlpha=1;
     ctx.restore();
@@ -1070,37 +1315,62 @@
       ctx.fillStyle=fl.color;ctx.fillText(fl.text,fl.x,yy);
       ctx.restore();ctx.textAlign='left';
     }
+    drawPows(time);   // comic-book burst on a good strike, above everything
+    drawChunks(time); // flying shards from a shattered conker
   }
   function easeIn(t){return t*t*(3-2*t);}
 
   // ---------- buttons ----------
   const over=document.getElementById('over');
-  document.getElementById('again').addEventListener('click',()=>newMatch(you.hp>0));
+  document.getElementById('again').addEventListener('click',()=>{ audioUnlock(); newMatch(you.hp>0); });
   document.getElementById('how').addEventListener('click',()=>{
-    coach("Damage = <b>power × aim × timing</b>. More power hits harder and faster but your aim shakes more and <b>drifts the longer you hold</b> — commit while steady, when the scar faces you. When they swing back, <b>tap to brace</b> as it lands.");
+    coach("The foe sways across the arena and your strike takes time to fly — <b>aim ahead of them</b> so they sway into it. Damage = <b>power × aim × timing</b> (the scar facing you as it lands hits hardest). When they swing back, <b>tap to brace</b> as it connects.");
   });
 
   // ---------- settings / controls panel ----------
   const setPanel=document.getElementById('settings');
-  document.getElementById('settingsBtn').addEventListener('click',()=>{ updateSensorUI(); setPanel.classList.add('show'); });
+  document.getElementById('settingsBtn').addEventListener('click',()=>{ audioUnlock(); updateSensorUI(); setPanel.classList.add('show'); });
   document.getElementById('setClose').addEventListener('click',()=>setPanel.classList.remove('show'));
   document.querySelectorAll('#segMode button').forEach(b=>b.addEventListener('click',()=>{
     controlMode=b.dataset.mode;
     document.querySelectorAll('#segMode button').forEach(x=>x.classList.toggle('on',x===b));
     coach(controlMode==='motion'
-      ? "Motion mode: <b>tilt to aim</b>, <b>swing the phone</b> to strike. Tap to brace."
-      : "Touch mode: <b>pull down &amp; back</b> to wind up, release to swing.");
+      ? "Tilt + pull: <b>tilt the phone</b> to aim, <b>drag back</b> to set power, release to strike."
+      : "Touch: <b>drag down &amp; back</b> to aim and set power, release to swing.");
   }));
   document.getElementById('enableMotion').addEventListener('click',()=>{
-    enableMotion();
-    document.getElementById('enableMotion').textContent='Listening for motion…';
+    audioUnlock(); enableMotion();
+    document.getElementById('enableMotion').textContent='Listening for tilt…';
     setTimeout(updateSensorUI,400); setTimeout(updateSensorUI,1500);
   });
-  document.getElementById('gyroToggle').addEventListener('click',function(){
-    if(!sensors.gyro) return;
-    useGyro=!useGyro; this.textContent=useGyro?'On':'Off'; this.classList.toggle('on',useGyro);
-  });
   document.getElementById('sens').addEventListener('input',function(){ motionSens=parseFloat(this.value); });
+  document.getElementById('soundToggle').addEventListener('click',function(){
+    soundOn=!soundOn; this.textContent=soundOn?'On':'Off'; this.classList.toggle('on',soundOn);
+    if(soundOn){ audioUnlock(); sfxCrack(false); }   // little confirmation tick
+  });
+
+  // opponent: practice bot vs online 2-player
+  document.querySelectorAll('#segOpp button').forEach(b=>b.addEventListener('click',()=>{
+    opponent=b.dataset.opp;
+    document.querySelectorAll('#segOpp button').forEach(x=>x.classList.toggle('on',x===b));
+    const online=opponent==='online';
+    document.getElementById('lobby').style.display=online?'block':'none';
+    document.getElementById('oppNote').textContent=online
+      ? 'Connect a second phone to duel a friend. (Online for now; Bluetooth later.)'
+      : 'Practice against the computer — play offline, anytime.';
+  }));
+  document.getElementById('hostBtn').addEventListener('click',()=>{
+    document.getElementById('joinRow').style.display='none'; hostGame();
+  });
+  document.getElementById('joinBtn').addEventListener('click',()=>{
+    document.getElementById('codeShow').style.display='none';
+    document.getElementById('joinRow').style.display='block';
+  });
+  document.getElementById('connectBtn').addEventListener('click',()=>{
+    const code=(document.getElementById('codeInput').value||'').trim().toUpperCase();
+    if(code.length!==4){ netStat('enter the 4-letter code','no'); return; }
+    joinGame(code);
+  });
 
   // ---------- boot ----------
   resize();
