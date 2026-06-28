@@ -95,10 +95,11 @@
   .t-main b{color:var(--gold)}
   .t-quip{font-family:var(--display);font-style:italic;font-size:12.5px;color:var(--muted);margin-top:4px}
   #settings{position:absolute;inset:0;z-index:22;display:none;align-items:center;justify-content:center;
-    padding:18px;background:rgba(12,7,4,.85);backdrop-filter:blur(3px)}
+    padding:18px;background:rgba(12,7,4,.85);backdrop-filter:blur(3px);overflow-y:auto}
   #settings.show{display:flex}
   .set-card{background:linear-gradient(180deg,#3a2417,#281710);border:1px solid rgba(184,155,110,.3);
-    border-radius:16px;padding:18px;max-width:36ch;width:100%;box-shadow:0 18px 40px rgba(0,0,0,.5)}
+    border-radius:16px;padding:18px;max-width:36ch;width:100%;box-shadow:0 18px 40px rgba(0,0,0,.5);
+    max-height:88vh;overflow-y:auto;margin:auto}
   .set-card h3{font-family:var(--display);font-size:20px;font-weight:700}
   .setsub{font-size:11px;color:var(--muted);margin:4px 0 14px;line-height:1.4}
   .set-row{margin-bottom:14px}
@@ -187,24 +188,13 @@
           </div>
           <div class="note" id="modeNote">Touch: drag to aim &amp; set power. Tilt + pull: tilt the phone to aim, drag back to set power, release to strike.</div>
         </div>
-        <div class="set-row" id="motionSetup">
+        <div class="set-row" id="motionSetup" style="display:none">
           <button class="ghost" id="enableMotion" style="width:100%;margin-bottom:10px">Enable tilt sensor</button>
           <div class="statrow"><span>Tilt sensor (aim)</span><span id="stTilt" class="no">waiting…</span></div>
           <div style="margin-top:12px">
             <div class="lbl">Aim sensitivity</div>
             <input type="range" id="sens" min="0.6" max="1.7" step="0.05" value="1">
           </div>
-          <div class="lbl" style="margin-top:14px">Sensor diagnostics</div>
-          <div id="diag">
-            <div class="statrow"><span>Secure (https)</span><span id="dSecure" class="no">—</span></div>
-            <div class="statrow"><span>Enable state</span><span id="dState">not started</span></div>
-            <div class="statrow"><span>Motion events</span><span id="dMotion">0</span></div>
-            <div class="statrow"><span>Orient events</span><span id="dOrient">0</span></div>
-            <div class="statrow"><span>Live accel</span><span id="dAccel">0.0</span></div>
-            <div class="statrow"><span>Live tilt</span><span id="dTilt">0°</span></div>
-            <div class="statrow"><span>Last error</span><span id="dErr" class="no">none</span></div>
-          </div>
-          <div class="note">Wave the phone: if <b>Live accel</b> moves, sensors work. If <b>Motion events</b> stays 0, Chrome is blocking them — check the site's “Motion sensors” permission (tap the lock icon).</div>
         </div>
         <button id="setClose" style="width:100%;margin-top:6px">Done</button>
       </div>
@@ -1334,6 +1324,7 @@
   document.querySelectorAll('#segMode button').forEach(b=>b.addEventListener('click',()=>{
     controlMode=b.dataset.mode;
     document.querySelectorAll('#segMode button').forEach(x=>x.classList.toggle('on',x===b));
+    document.getElementById('motionSetup').style.display = controlMode==='motion' ? 'block' : 'none';
     coach(controlMode==='motion'
       ? "Tilt + pull: <b>tilt the phone</b> to aim, <b>drag back</b> to set power, release to strike."
       : "Touch: <b>drag down &amp; back</b> to aim and set power, release to swing.");
