@@ -1385,13 +1385,15 @@
     if(online){ if(!net.connected) setPill('','offline'); } else { pill.classList.remove('on'); }
   }));
   document.getElementById('hostBtn').addEventListener('click',()=>{
-    document.getElementById('joinRow').style.display='none'; hostGame();
+    audioUnlock(); document.getElementById('joinRow').style.display='none'; hostGame();
   });
   document.getElementById('joinBtn').addEventListener('click',()=>{
+    audioUnlock();
     document.getElementById('codeShow').style.display='none';
     document.getElementById('joinRow').style.display='block';
   });
   document.getElementById('connectBtn').addEventListener('click',()=>{
+    audioUnlock();
     const code=(document.getElementById('codeInput').value||'').trim().toUpperCase();
     if(code.length!==4){ netStat('enter the 4-letter code','no'); return; }
     joinGame(code);
