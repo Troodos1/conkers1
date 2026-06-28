@@ -261,7 +261,7 @@
   const maxHpFor = s => 100 + tierOf(s)*18;   // 100,118,136,154,172,190,208
 
   // ---------- game state ----------
-  const ST = {AIM:'aim',STRIKE:'strike',FOEWIND:'foewind',FOE:'foe',OVER:'over'};
+  const ST = {AIM:'aim',STRIKE:'strike',FOEWIND:'foewind',FOE:'foe',OVER:'over',NETWAIT:'netwait'};
   let state, you, foe, charging, pull, aimPhase, foeAnim, fx, shake, t0, lastSwing, chargeStart, aimBase, aimTarget, pressStart, brace, braceFlash=0, flash=0, banner=null, foeWind=null, roundLog=null, floats=[], twitch=null, pows=[], chunks=[], shattered=null;
   // ---- control scheme / motion sensors ----
   let controlMode='touch', motionOn=false, useGyro=false, motionSens=1, swingCd=0;
@@ -573,9 +573,59 @@
     netStat('connected to '+net.oppName+'  ·  sync '+(net.seed%10000),'ok');
     setPill('live','● '+net.oppName);
     audioUnlock(); sfxConnect();
-    banner={text:'CONNECTED', t:performance.now(), life:1600, color:'#5fd36a'};
-    coach('<b style="color:#9be8a4">Connected to '+net.oppName+'.</b> Both phones show the same sync number — the link is live. (Live dueling is the next step.)');
     foeSwayPhase = (net.seed % 6283) / 1000;
+    startNetMatch();
+  }
+  function netActive(){ return opponent==='online' && net.connected && net._ready; }
+  const NET_MAXHP=120;
+  function startNetMatch(){
+    net.onPacket=handleGamePacket;
+    if(setPanel) setPanel.classList.remove('show');
+    over.classList.remove('show');
+    // both conkers start equal so the two phones stay in lockstep
+    you.score=0; you.max=NET_MAXHP; you.hp=NET_MAXHP;
+    foe.score=0; foe.max=NET_MAXHP; foe.hp=NET_MAXHP; foe.name=net.oppName;
+    document.getElementById('foeName').textContent=net.oppName;
+    foeAnim=null; charging=false; pull={x:0,y:0,len:0}; brace=null; foeWind=null; floats=[]; pows=[]; chunks=[]; shattered=null;
+    syncHud();
+    net.iAttack = (net.role==='host');     // host strikes first
+    banner={text:'CONNECTED', t:performance.now(), life:1500, color:'#5fd36a'};
+    setTimeout(netSetTurn, 900);
+  }
+  function netSetTurn(){
+    if(!netActive()) return;
+    foeAnim=null; charging=false; pull={x:0,y:0,len:0};
+    if(net.iAttack){ state=ST.AIM; banner={text:'YOUR TURN', t:performance.now(), life:1100, color:'#f2c879'};
+      coach('<b>Your turn</b> — aim and strike '+net.oppName+'.'); }
+    else { state=ST.NETWAIT; banner={text:net.oppName.toUpperCase()+'’S TURN', t:performance.now(), life:1100};
+      coach('<b>'+net.oppName+'’s turn</b> — get ready to <b>brace</b> when they swing.'); }
+  }
+  function handleGamePacket(m){
+    if(!netActive()) return;
+    if(m.t==='swing' && !net.iAttack){ netIncomingSwing(m); }
+    else if(m.t==='brace' && net.iAttack){ netApplyBrace(m); }
+    else if(m.t==='rematch'){ startNetMatch(); }
+  }
+  // I attacked; my opponent braced and sent back the outcome
+  function netApplyBrace(m){
+    const r=Math.min(W,H)*0.085, a=anchors(), fp=foePos(performance.now());
+    if(m.final>0){ applyDamage(foe,m.final,m.crit&&m.result!=='perfect'&&m.result!=='good',{x:fp.x,y:fp.y});
+      if(m.crit&&m.final>=12) spawnPow(fp.x,fp.y,'POW!'); sfxCrack(m.crit); sfxYelp(); }
+    else { sfxClash(); }
+    if(m.rebound>0){ applyDamage(you,m.rebound,false,a.you); }
+    spawnFloat(fp.x, fp.y-r*1.3, m.final>0?`−${m.final}`:'BLOCKED', m.final>0?'#ff6a4a':'#7bd389', 18);
+    const lbl={perfect:'PERFECT!',good:'GOOD BRACE',partial:'PARTIAL',miss:'MISTIMED'}[m.result||'miss'];
+    spawnFloat(fp.x, fp.y-r*1.9, lbl, (m.result&&m.result!=='miss')?'#7bd389':'#ffce7a', 12);
+    if(m.rebound>0) spawnFloat(a.you.x, a.you.y-r*1.5, `−${m.rebound}`, '#ff6a4a', 14);
+    toast(m.final>0?`${net.oppName} took <b>${m.final}</b>.`:`${net.oppName} braced it!`);
+    if(foe.hp<=0){ return killConker('foe'); }
+    if(you.hp<=0){ return killConker('you'); }
+    net.iAttack=false; setTimeout(netSetTurn, 1400);
+  }
+  // opponent swung at me — render it and let me brace; reuse the foe-swing visuals
+  function netIncomingSwing(m){
+    roundLog={};
+    foeSwing(m.power||0.6, m);    // m carries {dmg, crit, power, aimScore}
   }
   function showCode(code){
     document.getElementById('codeShow').style.display='block';
@@ -645,10 +695,23 @@
     }
     const impact = connect ? {x:fp.x,y:fp.y} : {x:lastSwing.aimPoint.x,y:lastSwing.aimPoint.y};
     Object.assign(lastSwing,{aimScore,exposure,dmg,crit,label,connect,impact,targetAtFire:fp});
-    if(connect){ applyDamage(foe,dmg,crit,impact); sfxCrack(crit); sfxYelp();
+    if(!connect){ missFx(impact); sfxPhew(); }
+    else if(!netActive()){ sfxCrack(crit); }
+
+    if(netActive()){
+      // send the blow; the opponent will brace and report the outcome back
+      const r2=Math.min(W,H)*0.085, a=anchors();
+      spawnFloat(a.you.x, a.you.y-r2*1.7, `${Math.round(power*100)}% PWR`, '#f4c878', 12);
+      spawnFloat(a.you.x, a.you.y-r2*1.1, `${Math.round(aimScore*100)}% ACC`, '#f4c878', 12);
+      netSend({t:'swing', dmg, crit, power:+power.toFixed(3), aimScore:+aimScore.toFixed(3)});
+      state=ST.NETWAIT;
+      coach(connect?`Good hit incoming — <b>${net.oppName}</b> is bracing…`:`Missed — <b>${net.oppName}</b> braces nothing.`);
+      return;
+    }
+
+    if(connect){ applyDamage(foe,dmg,crit,impact); sfxYelp();
       if(crit) spawnPow(impact.x,impact.y,'POW!');
       else if(label==='hit') spawnPow(impact.x,impact.y,'BIFF!'); }
-    else { missFx(impact); sfxPhew(); }
     afterPlayer(aimScore,dmg,crit,label,connect);
   }
 
@@ -693,6 +756,7 @@
 
   // foe's turn is announced clearly first, THEN the wind-up power bar appears
   function beginFoeTurn(){
+    if(netActive()) return;                          // net uses its own turn flow
     if(state!==ST.FOEWIND) return;
     banner={text:`${foe.name.toUpperCase()}’S TURN`, t:performance.now(), life:1300};
     coach(`<b>${foe.name}</b> steps up — watch the power bar, then <b>brace</b> as it swings.`);
@@ -701,6 +765,7 @@
 
   // ---------- foe winds up (telegraphed by a charging bar), then swings ----------
   function scheduleFoeWind(){
+    if(netActive()) return;
     state=ST.FOEWIND;
     const power=0.40+Math.random()*0.58;           // this swing's power — shown by the wind-up bar
     const fillDur=750, holdDur=700+Math.random()*2400;  // suspense lives in the random hold
@@ -709,15 +774,20 @@
     foeWind.timer=setTimeout(()=>{ if(state===ST.FOEWIND && foeWind) foeSwing(power); }, fillDur+holdDur);
   }
 
-  function foeSwing(power){
+  function foeSwing(power, pkt){
     state=ST.FOE; foeWind=null;
-    const skill=0.45+Math.random()*0.4;
-    const aimScore=Math.max(0,Math.min(1, skill + (Math.random()-0.5)*0.5));
-    const exposure=0.5+Math.random()*0.5;
-    let dmg=0,crit=false;
-    if(aimScore>0.05){
-      dmg=34*power*aimScore*(0.55+0.45*exposure);
-      crit=power>0.7&&aimScore>0.82; if(crit)dmg*=1.4; dmg=Math.round(dmg);
+    const isNet = !!pkt && netActive();
+    let aimScore, exposure, dmg=0, crit=false;
+    if(isNet){
+      dmg = pkt.dmg||0; crit = !!pkt.crit; aimScore = pkt.aimScore||0; exposure = 1;
+    } else {
+      const skill=0.45+Math.random()*0.4;
+      aimScore=Math.max(0,Math.min(1, skill + (Math.random()-0.5)*0.5));
+      exposure=0.5+Math.random()*0.5;
+      if(aimScore>0.05){
+        dmg=34*power*aimScore*(0.55+0.45*exposure);
+        crit=power>0.7&&aimScore>0.82; if(crit)dmg*=1.4; dmg=Math.round(dmg);
+      }
     }
     const a=anchors(), time=performance.now();
     const dur=700-power*180;                        // slowed & readable: ~520ms (smash) to ~700ms (tap)
@@ -729,11 +799,19 @@
         if(brace.result==='perfect' || brace.result==='good'){ sfxClash(); }
         else { sfxCrack(crit&&brace.mit>0.6); sfxYelp(); }
         applyDamage(you,final,crit&&brace.mit>0.6,a.you);
-        if(brace.result==='perfect' && foe.hp>0) applyDamage(foe,6,false,foePos(performance.now())); // rebound
+        const rebound = (brace.result==='perfect' && foe.hp>0) ? 6 : 0;
+        if(rebound) applyDamage(foe,rebound,false,foePos(performance.now())); // rebound onto attacker
         brace.armed=false;
         roundLog.f.final=final; roundLog.f.brace=brace.result;
         spawnExchangeFloats();
         toast(defenceLine(roundLog.f), Math.random()<0.5?randQuip():null);
+        if(isNet){
+          netSend({t:'brace', final, rebound, result:brace.result, crit});
+          if(you.hp<=0){ return killConker('you'); }
+          if(foe.hp<=0){ return killConker('foe'); }
+          net.iAttack=true; setTimeout(netSetTurn, 1400);
+          return;
+        }
         if(you.hp<=0){return killConker('you');}
         setTimeout(()=>{ if(state===ST.FOE){ state=ST.AIM; coach("Your turn — <b>wind up</b> and let it fly."); } }, 750);
       }};
@@ -1344,7 +1422,10 @@
 
   // ---------- buttons ----------
   const over=document.getElementById('over');
-  document.getElementById('again').addEventListener('click',()=>{ audioUnlock(); newMatch(you.hp>0); });
+  document.getElementById('again').addEventListener('click',()=>{ audioUnlock();
+    if(netActive()){ netSend({t:'rematch'}); startNetMatch(); }
+    else newMatch(you.hp>0);
+  });
   document.getElementById('how').addEventListener('click',()=>{
     coach("The foe sways across the arena and your strike takes time to fly — <b>aim ahead of them</b> so they sway into it. Damage = <b>power × aim × timing</b> (the scar facing you as it lands hits hardest). When they swing back, <b>tap to brace</b> as it connects.");
   });
