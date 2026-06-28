@@ -102,6 +102,14 @@
     max-height:88vh;overflow-y:auto;margin:auto}
   .set-card h3{font-family:var(--display);font-size:20px;font-weight:700}
   .setsub{font-size:11px;color:var(--muted);margin:4px 0 14px;line-height:1.4}
+  #netPill{display:none;align-items:center;gap:5px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--muted);background:rgba(0,0,0,.25);border:1px solid rgba(184,155,110,.25);border-radius:20px;padding:3px 9px;margin-left:8px}
+  #netPill.on{display:inline-flex}
+  #netPill .dot{width:8px;height:8px;border-radius:50%;background:#8a7a66;transition:background .3s}
+  #netPill.connecting .dot{background:#f2a03d;animation:pulse 1s infinite}
+  #netPill.live .dot{background:#5fd36a;box-shadow:0 0 8px #5fd36a}
+  #netPill.live{color:#9be8a4;border-color:rgba(95,211,106,.4)}
+  @keyframes pulse{50%{opacity:.4}}
   .set-row{margin-bottom:14px}
   .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px}
   .seg{display:flex;gap:6px}
@@ -125,6 +133,7 @@
     <div class="title">
       <h1>Conkers <em>Duel</em></h1>
       <span class="tag">skill prototype</span>
+      <span id="netPill" title="connection status"><span class="dot"></span><span id="netPillTxt">offline</span></span>
     </div>
     <div class="bars">
       <div class="fighter">
@@ -174,7 +183,7 @@
             <div id="codeBig" style="font:800 30px system-ui;letter-spacing:.3em;color:var(--ember)">— — — —</div>
           </div>
           <div class="statrow"><span>Status</span><span id="netStat" class="no">not connected</span></div>
-          <div class="note">Both phones need internet for this online test. The offline Bluetooth version comes later — the game itself won't change.</div>
+          <div class="note">For this online test, the most reliable setup is <b>both phones on the same Wi‑Fi</b> (different networks/cellular often won’t connect yet). One Hosts, the other Joins. The offline Bluetooth version comes later — the game itself won’t change.</div>
         </div>
         <div class="toggle" style="margin-bottom:14px">
           <span class="lbl" style="margin:0">Sound effects</span>
@@ -290,6 +299,7 @@
   function sfxClash(){ aTone(2100,0,0.22,'square',0.12,1500); aTone(2790,0,0.2,'square',0.1,1900); aTone(3500,0,0.16,'triangle',0.08,2600); aNoise(0.05,0,0.2,'bandpass',3000,1.2); } // shield clang
   function sfxBoo(){ aTone(300,0,0.4,'sawtooth',0.16,150); aTone(296,0.0,0.4,'sawtooth',0.12,150); aTone(452,0.02,0.36,'triangle',0.06,180); } // crowd "booo"
   function sfxShatter(){ aTone(90,0,0.5,'triangle',0.5,40); aNoise(0.5,0,0.5,'lowpass',1600,0.6,200); aNoise(0.18,0,0.4,'highpass',2000,0.7); } // big crack + debris
+  function sfxConnect(){ aTone(523,0,0.14,'triangle',0.22); aTone(659,0.12,0.14,'triangle',0.22); aTone(784,0.24,0.2,'triangle',0.24); } // rising chime
 
   function freshConker(score){const m=maxHpFor(score);return {hp:m,max:m,score:score};}
 
@@ -488,11 +498,28 @@
   // The game only ever asks the transport to send/receive small JSON packets, so swapping
   // PeerJS for native Nearby Connections later means rewriting just this block.
   let opponent='bot';                       // 'bot' | 'online'
-  const net={ peer:null, conn:null, role:null, connected:false, code:null, seed:null, oppName:null, onPacket:null };
+  const net={ peer:null, conn:null, role:null, connected:false, code:null, seed:null, oppName:null, onPacket:null, timer:null };
+  const ICE={ iceServers:[
+    {urls:'stun:stun.l.google.com:19302'},
+    {urls:'stun:stun1.l.google.com:19302'},
+    {urls:'stun:stun2.l.google.com:19302'}
+  ]};
   const HANDLES=['Bramble','Knuckle','Spike','Ironside','Old Oak','Thwack','Cracker','Gnarls'];
   function myHandle(){ if(!net._h) net._h=HANDLES[(Math.random()*HANDLES.length)|0]; return net._h; }
+  function setPill(stateCls,txt){
+    const p=document.getElementById('netPill'), t=document.getElementById('netPillTxt');
+    if(!p)return; p.classList.add('on'); p.classList.remove('connecting','live');
+    if(stateCls) p.classList.add(stateCls); if(t&&txt) t.textContent=txt;
+  }
   function netStat(msg,cls){ const e=document.getElementById('netStat'); if(e){e.textContent=msg; e.className=cls||'';} }
   function randCode(){ const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s=''; for(let i=0;i<4;i++)s+=A[(Math.random()*A.length)|0]; return s; }
+  function armConnectTimeout(){
+    clearTimeout(net.timer);
+    net.timer=setTimeout(()=>{ if(!net.connected){
+      netStat('no luck — put BOTH phones on the SAME Wi‑Fi, then retry','no');
+      setPill('', 'no link');
+    } }, 20000);
+  }
   function loadPeerJS(cb){
     if(window.Peer){ cb(); return; }
     netStat('loading connection library…');
@@ -503,18 +530,20 @@
     document.head.appendChild(s);
   }
   function hostGame(){
+    setPill('connecting','hosting…'); armConnectTimeout();
     loadPeerJS(()=>{
       net.role='host'; net.code=randCode();
-      try{ net.peer=new Peer('conkersduel-'+net.code); }catch(e){ netStat('error: '+e.message,'no'); return; }
+      try{ net.peer=new Peer('conkersduel-'+net.code,{config:ICE}); }catch(e){ netStat('error: '+e.message,'no'); return; }
       net.peer.on('open',()=>{ showCode(net.code); netStat('waiting for a player to join…'); });
       net.peer.on('connection',c=>{ net.conn=c; wireConn(); });
       net.peer.on('error',e=>netStat('error: '+(e.type||e.message),'no'));
     });
   }
   function joinGame(code){
+    setPill('connecting','connecting…'); armConnectTimeout();
     loadPeerJS(()=>{
       net.role='join';
-      try{ net.peer=new Peer(); }catch(e){ netStat('error: '+e.message,'no'); return; }
+      try{ net.peer=new Peer(undefined,{config:ICE}); }catch(e){ netStat('error: '+e.message,'no'); return; }
       net.peer.on('open',()=>{ netStat('connecting…'); net.conn=net.peer.connect('conkersduel-'+code,{reliable:true}); wireConn(); });
       net.peer.on('error',e=>netStat('error: '+(e.type==='peer-unavailable'?'no game with that code':e.type),'no'));
     });
@@ -526,24 +555,27 @@
       else { netSend({t:'hello',name:myHandle()}); }
     });
     net.conn.on('data',d=>{ let m; try{m=JSON.parse(d);}catch(e){return;} handlePacket(m); });
-    net.conn.on('close',()=>{ net.connected=false; netStat('player disconnected','no'); });
+    net.conn.on('close',()=>{ net.connected=false; netStat('player disconnected','no'); setPill('','disconnected'); });
   }
   function netSend(obj){ try{ if(net.conn&&net.conn.open) net.conn.send(JSON.stringify(obj)); }catch(e){} }
   function handlePacket(m){
     if(m.t==='hello'){
       net.oppName=m.name||'Player';
-      if(m.seed!=null) net.seed=m.seed;                 // host is authoritative for the shared seed
-      if(net.role==='host' && net.seed!=null) netSend({t:'seed',seed:net.seed}); // make sure joiner has it
+      if(m.seed!=null) net.seed=m.seed;
+      if(net.role==='host' && net.seed!=null) netSend({t:'seed',seed:net.seed});
       onConnectedReady();
     } else if(m.t==='seed'){ net.seed=m.seed; onConnectedReady(); }
-    else if(net.onPacket){ net.onPacket(m); }            // gameplay packets (wired in the next pass)
+    else if(net.onPacket){ net.onPacket(m); }
   }
   function onConnectedReady(){
-    if(net.seed==null||!net.oppName) return;
+    if(net.seed==null||!net.oppName||net._ready) return;
+    net._ready=true; clearTimeout(net.timer);
     netStat('connected to '+net.oppName+'  ·  sync '+(net.seed%10000),'ok');
-    // shared seed drives a deterministic sway both phones can verify is identical
+    setPill('live','● '+net.oppName);
+    audioUnlock(); sfxConnect();
+    banner={text:'CONNECTED', t:performance.now(), life:1600, color:'#5fd36a'};
+    coach('<b style="color:#9be8a4">Connected to '+net.oppName+'.</b> Both phones show the same sync number — the link is live. (Live dueling is the next step.)');
     foeSwayPhase = (net.seed % 6283) / 1000;
-    // (next pass: start the live net duel here)
   }
   function showCode(code){
     document.getElementById('codeShow').style.display='block';
@@ -1347,8 +1379,10 @@
     const online=opponent==='online';
     document.getElementById('lobby').style.display=online?'block':'none';
     document.getElementById('oppNote').textContent=online
-      ? 'Connect a second phone to duel a friend. (Online for now; Bluetooth later.)'
+      ? 'Connect a second phone to duel a friend. One phone Hosts, the other Joins.'
       : 'Practice against the computer — play offline, anytime.';
+    const pill=document.getElementById('netPill');
+    if(online){ if(!net.connected) setPill('','offline'); } else { pill.classList.remove('on'); }
   }));
   document.getElementById('hostBtn').addEventListener('click',()=>{
     document.getElementById('joinRow').style.display='none'; hostGame();
