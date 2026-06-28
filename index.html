@@ -110,6 +110,18 @@
   #netPill.live .dot{background:#5fd36a;box-shadow:0 0 8px #5fd36a}
   #netPill.live{color:#9be8a4;border-color:rgba(95,211,106,.4)}
   @keyframes pulse{50%{opacity:.4}}
+  #turnTag{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:6;display:none;
+    align-items:center;gap:7px;font:800 13px system-ui;letter-spacing:.06em;text-transform:uppercase;
+    padding:6px 14px;border-radius:22px;background:rgba(20,12,6,.72);border:1.5px solid rgba(184,155,110,.3);
+    color:#f0e2cc;box-shadow:0 4px 14px rgba(0,0,0,.35);backdrop-filter:blur(3px);white-space:nowrap}
+  #turnTag.show{display:inline-flex}
+  #turnTag #turnDot{width:9px;height:9px;border-radius:50%;background:#8a7a66}
+  #turnTag.you{border-color:rgba(95,211,106,.6);color:#aef0b4}
+  #turnTag.you #turnDot{background:#5fd36a;box-shadow:0 0 9px #5fd36a}
+  #turnTag.wait{border-color:rgba(242,160,61,.5);color:#f4c27a}
+  #turnTag.wait #turnDot{background:#f2a03d;animation:pulse 1.1s infinite}
+  #turnTag.incoming{border-color:rgba(255,106,74,.7);color:#ff9b7a}
+  #turnTag.incoming #turnDot{background:#ff6a4a;box-shadow:0 0 10px #ff6a4a;animation:pulse .55s infinite}
   .set-row{margin-bottom:14px}
   .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px}
   .seg{display:flex;gap:6px}
@@ -149,6 +161,7 @@
 
   <div id="stage">
     <canvas id="cv"></canvas>
+    <div id="turnTag"><span id="turnDot"></span><span id="turnTxt"></span></div>
     <div id="over">
       <div class="verdict" id="verdict"></div>
       <div class="taunt" id="tauntLine"></div>
@@ -189,16 +202,17 @@
             <div id="codeBig" style="font:800 30px system-ui;letter-spacing:.3em;color:var(--ember)">— — — —</div>
           </div>
           <div class="statrow"><span>Status</span><span id="netStat" class="no">not connected</span></div>
+          <button class="ghost" id="disconnectBtn" style="display:none;width:100%;margin-top:8px;border-color:rgba(255,106,74,.4);color:#ff9b7a">Disconnect</button>
           <div class="note">For this online test, the most reliable setup is <b>both phones on the same Wi‑Fi</b> (different networks/cellular often won’t connect yet). One Hosts, the other Joins. The offline Bluetooth version comes later — the game itself won’t change.</div>
         </div>
         <div class="set-row">
-          <div class="lbl">Difficulty (swing speed)</div>
+          <div class="lbl">Difficulty (target speed)</div>
           <div class="seg" id="segDiff">
             <button data-diff="easy">Easy</button>
-            <button data-diff="medium">Medium</button>
-            <button data-diff="hard" class="on">Hard</button>
+            <button data-diff="medium" class="on">Medium</button>
+            <button data-diff="hard">Hard</button>
           </div>
-          <div class="note" id="diffNote">Hard = fastest conkers (current speed). Easier settings slow the swing so it’s simpler to time. In 2‑player, the Host’s choice is used for both.</div>
+          <div class="note" id="diffNote">Changes how fast the <b>target</b> conker sways (not your own swing). A slower target is harder to time, so <b>Hard = slow sway</b>, Easy = quick. In 2‑player the Host’s choice is used for both.</div>
         </div>
         <div class="toggle" style="margin-bottom:14px">
           <span class="lbl" style="margin:0">Sound effects</span>
@@ -330,6 +344,7 @@
     document.getElementById('toast').classList.remove('show');
     state=ST.AIM;
     over.classList.remove('show');
+    if(typeof setTurnTag==='function') setTurnTag(null);
     syncHud();
     coach("Pull <b>down &amp; back</b> to wind up. The harder you pull, the further back you load — more power, but <b>harder to aim</b>.");
     setStats(null);
@@ -354,7 +369,7 @@
   // ---------- foe pendulum sway (the timing target) ----------
   function foeAngle(time){
     // sways side to side; scar faces you when angle near 0 -> sweet spot
-    return Math.sin(time*0.0018 + foeSwayPhase)*1.05;
+    return Math.sin(time*0.0018*swayMult() + foeSwayPhase)*1.05;
   }
   let foeSwayPhase = Math.random()*6.28;
   function foePos(time){
@@ -372,12 +387,13 @@
   }
   function down(e){
     if(state===ST.FOE){ e.preventDefault(); tryBrace(); return; }
-    if(state===ST.FOEWIND && foeWind){ e.preventDefault(); flinch(); return; }
+    if(state===ST.FOEWIND && foeWind){ e.preventDefault(); if(netActive()) netFlinch(); else flinch(); return; }
     if(state!==ST.AIM) return;
     e.preventDefault();
     audioUnlock();
     const p=localPt(e); pressStart={x:p.x,y:p.y};   // grab anywhere — drag is measured from here
     charging=true; pull={x:0,y:0,len:0}; chargeStart=performance.now();
+    if(netActive() && net.iAttack && !net.sentWind){ net.sentWind=true; netSend({t:'windup'}); } // telegraph to opponent
     if(controlMode==='touch') aimBase=aimTarget=-Math.PI/2;   // touch: drag sets aim too. motion: aim stays on tilt
   }
   function move(e){
@@ -407,7 +423,9 @@
   function up(e){
     if(!charging) return;
     charging=false;
-    if(pull.len<0.08){coach("Too soft — really <b>wind it back</b> to load power.");return;}
+    if(pull.len<0.08){coach("Too soft — really <b>wind it back</b> to load power.");
+      if(netActive() && net.iAttack && net.sentWind){ net.sentWind=false; netSend({t:'windcancel'}); }
+      return;}
     launch();
   }
   cv.addEventListener('mousedown',down); cv.addEventListener('mousemove',move);
@@ -514,9 +532,10 @@
   // PeerJS for native Nearby Connections later means rewriting just this block.
   let opponent='bot';                       // 'bot' | 'online'
   const net={ peer:null, conn:null, role:null, connected:false, code:null, seed:null, oppName:null, onPacket:null, timer:null, lastSeen:0 };
-  let gameDiff='hard';                               // hard = current (fastest) speed
-  const DIFFS={ easy:1.95, medium:1.45, hard:1.0 };
-  function diffMult(){ return DIFFS[gameDiff]||1; }
+  let gameDiff='medium';                             // medium = current speed
+  // difficulty changes how fast the TARGET conker sways. Per design: a slower target is harder to time.
+  const SWAY={ easy:1.5, medium:1.0, hard:0.58 };    // easy = quick sway, hard = slow sway
+  function swayMult(){ return SWAY[gameDiff]||1; }
   const ICE={ iceServers:[
     {urls:'stun:stun.l.google.com:19302'},
     {urls:'stun:stun1.l.google.com:19302'},
@@ -577,14 +596,32 @@
     net.conn.on('close',()=>{ markDisconnected('player disconnected'); });
   }
   function netSend(obj){ try{ if(net.conn&&net.conn.open) net.conn.send(JSON.stringify(obj)); }catch(e){} }
+  function netUIDisconnected(){
+    const pill=document.getElementById('netPill'); if(pill) pill.classList.remove('live','connecting');
+    const db=document.getElementById('disconnectBtn'); if(db) db.style.display='none';
+    setTurnTag(null);
+  }
+  function leaveNet(){
+    clearTimeout(net.timer);
+    try{ if(net.conn) net.conn.close(); }catch(e){}
+    try{ if(net.peer) net.peer.destroy(); }catch(e){}
+    net.conn=null; net.peer=null; net.connected=false; net._ready=false; net.onPacket=null;
+    net.oppName=null; net.seed=null; net.role=null; net.sentWind=false; net.flinched=false; net.iAttack=false;
+    netUIDisconnected();
+    const pill=document.getElementById('netPill'); if(pill) pill.classList.remove('on');
+    document.getElementById('codeShow').style.display='none';
+    document.getElementById('joinRow').style.display='none';
+    netStat('not connected','no');
+  }
   function markDisconnected(reason){
     if(!net.connected && !net._ready) return;
-    net.connected=false; net._ready=false; net.onPacket=null;
+    net.connected=false; net._ready=false; net.onPacket=null; net.sentWind=false; net.flinched=false;
+    try{ if(net.conn) net.conn.close(); }catch(e){}
     netStat((reason||'connection lost')+' — re‑host or re‑join','no');
-    setPill('','connection lost');
+    setPill('','connection lost'); netUIDisconnected();
     banner={text:'CONNECTION LOST', t:performance.now(), life:2200, color:'#ff8a5a'};
-    coach('<b>Connection lost.</b> Open <b>Controls → 2 Players</b> to reconnect.');
-    if(state===ST.AIM||state===ST.NETWAIT||state===ST.FOE){ state=ST.NETWAIT; brace=null; foeAnim=null; }
+    coach('<b>Connection lost.</b> Tap <b>Bot</b> to play offline, or re‑Host/Join to reconnect.');
+    if(state===ST.AIM||state===ST.NETWAIT||state===ST.FOE||state===ST.FOEWIND){ state=ST.NETWAIT; brace=null; foeAnim=null; }
   }
   function netHeartbeat(){
     if(!net.connected) return;
@@ -595,10 +632,10 @@
     if(m.t==='hello'){
       net.oppName=m.name||'Player';
       if(m.seed!=null) net.seed=m.seed;
-      if(m.diff && DIFFS[m.diff]){ gameDiff=m.diff; syncDiffUI(); }   // host's difficulty wins
+      if(m.diff && SWAY[m.diff]){ gameDiff=m.diff; syncDiffUI(); }   // host's difficulty wins
       if(net.role==='host' && net.seed!=null) netSend({t:'seed',seed:net.seed,diff:gameDiff});
       onConnectedReady();
-    } else if(m.t==='seed'){ net.seed=m.seed; if(m.diff&&DIFFS[m.diff]){gameDiff=m.diff;syncDiffUI();} onConnectedReady(); }
+    } else if(m.t==='seed'){ net.seed=m.seed; if(m.diff&&SWAY[m.diff]){gameDiff=m.diff;syncDiffUI();} onConnectedReady(); }
     else if(net.onPacket){ net.onPacket(m); }
   }
   function onConnectedReady(){
@@ -606,6 +643,7 @@
     net._ready=true; clearTimeout(net.timer); net.lastSeen=performance.now();
     netStat('connected to '+net.oppName+'  ·  sync '+(net.seed%10000),'ok');
     setPill('live','● '+net.oppName);
+    { const db=document.getElementById('disconnectBtn'); if(db) db.style.display='block'; }
     audioUnlock(); sfxConnect();
     foeSwayPhase = (net.seed % 6283) / 1000;
     startNetMatch();
@@ -626,22 +664,50 @@
     banner={text:'CONNECTED', t:performance.now(), life:1500, color:'#5fd36a'};
     setTimeout(netSetTurn, 900);
   }
+  function setTurnTag(kind,text){
+    const el=document.getElementById('turnTag'); if(!el) return;
+    el.classList.remove('show','you','wait','incoming');
+    if(!kind){ return; }
+    el.classList.add('show',kind);
+    document.getElementById('turnTxt').textContent=text;
+  }
   function netSetTurn(){
     if(!netActive()) return;
-    foeAnim=null; charging=false; pull={x:0,y:0,len:0};
+    foeAnim=null; charging=false; pull={x:0,y:0,len:0}; net.sentWind=false; net.flinched=false;
     if(net.iAttack){ state=ST.AIM; banner={text:'YOUR TURN', t:performance.now(), life:1100, color:'#f2c879'};
+      setTurnTag('you','● Your turn — strike');
       coach('<b>Your turn</b> — aim and strike '+net.oppName+'.'); }
     else { state=ST.NETWAIT; banner={text:net.oppName.toUpperCase()+'’S TURN', t:performance.now(), life:1100};
-      coach('<b>'+net.oppName+'’s turn</b> — get ready to <b>brace</b> when they swing.'); }
+      setTurnTag('wait','○ '+net.oppName+'’s turn');
+      coach('<b>'+net.oppName+'’s turn.</b> Watch for the wind‑up, then <b>brace</b> as it swings.'); }
   }
   function handleGamePacket(m){
     if(!netActive()) return;
     net.lastSeen=performance.now();
-    if(m.t==='swing' && !net.iAttack){ netIncomingSwing(m); }
+    if(m.t==='windup' && !net.iAttack){ netIncomingWind(); }
+    else if(m.t==='windcancel' && !net.iAttack){ netSetTurn(); }
+    else if(m.t==='swing' && !net.iAttack){ netIncomingSwing(m); }
     else if(m.t==='miss' && !net.iAttack){ netIncomingMiss(m); }
     else if(m.t==='brace' && net.iAttack){ netApplyBrace(m); }
     else if(m.t==='rematch'){ startNetMatch(); }
     else if(m.t==='ping'){ /* keep-alive only */ }
+  }
+  // opponent has started winding up — telegraph it so you know a conker is coming
+  function netIncomingWind(){
+    state=ST.FOEWIND; foeWind={net:true,t0:performance.now()}; net.flinched=false;
+    setTurnTag('incoming','⚠ '+net.oppName+' winding up…');
+    banner={text:net.oppName.toUpperCase()+' WINDS UP', t:performance.now(), life:1300, color:'#ff8a5a'};
+    coach('<b>⚠ '+net.oppName+' is winding up</b> — a conker is incoming. <b>Wait</b> for the swing, then brace. Don’t tap early!');
+  }
+  function netFlinch(){
+    if(net.flinched) return;
+    net.flinched=true; sfxBoo();
+    const r=Math.min(W,H)*0.085, a=anchors();
+    twitch={t0:performance.now()}; shake=8;
+    spawnFloat(a.you.x, a.you.y-r*1.4, 'TOO EARLY!', '#ff6a4a', 15);
+    toast('You flinched — braced too early!');
+    banner={text:'FLINCH!', t:performance.now(), life:1200, color:'#ff8a5a'};
+    coach('<b>Too early!</b> You braced before the swing — no block on this one. Wait for it next time.');
   }
   // opponent swung and missed — show it sail past, then it's my turn
   function netIncomingMiss(m){
@@ -651,6 +717,7 @@
       onImpact:()=>{ sfxPhew(); shake=2; }};
     toast(`<b>${net.oppName}</b> swung and missed!`);
     banner={text:'THEY MISSED', t:time, life:1100, color:'#9be8a4'};
+    setTurnTag('wait','○ they missed…');
     setTimeout(()=>{ if(netActive()){ net.iAttack=true; netSetTurn(); } }, 1100);
   }
   // I attacked; my opponent braced and sent back the outcome
@@ -752,12 +819,14 @@
       if(connect){
         netSend({t:'swing', dmg, crit, power:+power.toFixed(3), aimScore:+aimScore.toFixed(3)});
         state=ST.NETWAIT;
+        setTurnTag('wait','○ '+net.oppName+' bracing…');
         coach(`Good hit incoming — <b>${net.oppName}</b> is bracing…`);
       } else {
         spawnFloat(impact.x, impact.y-r2*1.3, 'MISS', '#b0a08c', 16);
         toast('Swing and a miss!');
         netSend({t:'miss', power:+power.toFixed(3)});
         state=ST.NETWAIT;
+        setTurnTag('wait','○ you missed…');
         net.iAttack=false; setTimeout(netSetTurn, 1500);
       }
       return;
@@ -781,7 +850,7 @@
     const time=performance.now();
     const start = lastSwing.origin || {x:anchors().you.x,y:anchors().you.y};
     const tgt = lastSwing.aimPoint || lastSwing.targetAtFire;
-    const dur = 780*diffMult();                      // constant flight; difficulty slows it (easier to read)
+    const dur = 780;                                 // your strike flight is constant — difficulty no longer touches this
     foeAnim={kind:'player',start,tgt,t0:time,dur,onImpact,fired:false};
     setStats(lastSwing); // show the read-out as it leaves the hand
   }
@@ -844,8 +913,11 @@
       }
     }
     const a=anchors(), time=performance.now();
-    const dur=(700-power*180)*diffMult();            // difficulty slows the incoming swing → more time to brace
+    const dur=(700-power*180);                       // incoming swing speed is constant (brace timing unchanged)
     brace={armed:true,used:false,impactAt:time+dur*0.5,dur,result:null,mit:1};
+    if(isNet && net.flinched){                        // braced too early during the wind-up — no block this swing
+      brace.used=true; brace.mit=1; brace.result='miss';
+    }
     roundLog.f={power,acc:aimScore,crit};
     foeAnim={kind:'foe',start:{...foePos(time)},tgt:{x:a.you.x,y:a.you.y},t0:time,dur,fired:false,
       onImpact:()=>{
@@ -869,7 +941,10 @@
         if(you.hp<=0){return killConker('you');}
         setTimeout(()=>{ if(state===ST.FOE){ state=ST.AIM; coach("Your turn — <b>wind up</b> and let it fly."); } }, 750);
       }};
-    coach(`<b>${foe.name}</b> swings — <b>tap to brace!</b>`);
+    coach(isNet && net.flinched
+      ? `<b>${foe.name}</b> swings — you flinched, no brace!`
+      : `<b>${foe.name}</b> swings — <b>tap to brace!</b>`);
+    if(isNet) setTurnTag('incoming', net.flinched?'⚠ flinched — bracing lost':'⚠ BRACE NOW!');
     banner={text:'BRACE!', t:performance.now(), life:1200};
   }
 
@@ -1008,7 +1083,7 @@
     const taunt = pickTaunt(winTier);
     const fireworks = winTier>=3 || taunt==='moon' || taunt==='fistpump' || Math.random()<0.35;
     victory={ who: won?'you':'foe', tier:winTier, taunt, t0:performance.now(), dur:3000, fireworks, fwNext:0, fw:[] };
-    state='celebrate';
+    state='celebrate'; if(typeof setTurnTag==='function') setTurnTag(null);
     banner={text: won?'YOU WIN!':(foe.name.toUpperCase()+' WINS'), t:performance.now(), life:1500, color: won?'#ffd76a':'#ff8a5a'};
     if(won) sfxConnect();
     const tline={dance:'does a little victory jig!',raspberry:'blows a big raspberry!',fistpump:'fist‑pumps the air!',bow:'takes a theatrical bow.',flex:'flexes for the crowd!',moon:'turns and moons you!'}[taunt];
@@ -1146,7 +1221,7 @@
   // ---------- end / scoring (winner inherits loser's score +1) ----------
   function endMatch(won){
     state=ST.OVER;
-    victory=null;
+    victory=null; if(typeof setTurnTag==='function') setTurnTag(null);
     const verdict=document.getElementById('verdict');
     const tauntLine=document.getElementById('tauntLine');
     const sub=document.getElementById('overSub');
@@ -1630,16 +1705,29 @@
 
   // opponent: practice bot vs online 2-player
   document.querySelectorAll('#segOpp button').forEach(b=>b.addEventListener('click',()=>{
-    opponent=b.dataset.opp;
+    const newOpp=b.dataset.opp;
+    const wasOnline = (opponent==='online') && (net.connected||net._ready||net.conn||net.peer);
+    opponent=newOpp;
     document.querySelectorAll('#segOpp button').forEach(x=>x.classList.toggle('on',x===b));
     const online=opponent==='online';
     document.getElementById('lobby').style.display=online?'block':'none';
     document.getElementById('oppNote').textContent=online
       ? 'Connect a second phone to duel a friend. One phone Hosts, the other Joins.'
       : 'Practice against the computer — play offline, anytime.';
+    // tear down any live link when leaving online (or re-entering), then start a clean match
+    leaveNet();
     const pill=document.getElementById('netPill');
-    if(online){ if(!net.connected) setPill('','offline'); } else { pill.classList.remove('on'); }
+    if(online){ setPill('','offline'); } else { pill.classList.remove('on'); }
+    setTurnTag(null);
+    newMatch(false);                                  // always reset the arena to a fresh game
   }));
+  document.getElementById('disconnectBtn').addEventListener('click',()=>{
+    leaveNet();
+    banner={text:'DISCONNECTED', t:performance.now(), life:1600, color:'#ff8a5a'};
+    setPill('','offline');
+    newMatch(false);
+    coach('Disconnected. <b>Host</b> or <b>Join</b> to start a new duel, or switch to <b>Bot</b>.');
+  });
   document.getElementById('hostBtn').addEventListener('click',()=>{
     audioUnlock(); document.getElementById('joinRow').style.display='none'; hostGame();
   });
