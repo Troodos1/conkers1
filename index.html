@@ -161,6 +161,12 @@
         <h3>Controls</h3>
         <div class="setsub">Choose how you swing. In a real match every player must use the same scheme.</div>
         <div class="set-row">
+          <div class="lbl">Your name</div>
+          <input id="nameInput" maxlength="14" placeholder="(optional — a random one is used)"
+            style="width:100%;padding:10px;border-radius:9px;border:1px solid rgba(184,155,110,.3);background:var(--surface);color:var(--text);font:600 15px system-ui">
+          <div class="note">Shown to your opponent. Set it before you Host or Join.</div>
+        </div>
+        <div class="set-row">
           <div class="lbl">Opponent</div>
           <div class="seg" id="segOpp">
             <button data-opp="bot" class="on">Practice (Bot)</button>
@@ -184,6 +190,15 @@
           </div>
           <div class="statrow"><span>Status</span><span id="netStat" class="no">not connected</span></div>
           <div class="note">For this online test, the most reliable setup is <b>both phones on the same Wi‑Fi</b> (different networks/cellular often won’t connect yet). One Hosts, the other Joins. The offline Bluetooth version comes later — the game itself won’t change.</div>
+        </div>
+        <div class="set-row">
+          <div class="lbl">Difficulty (swing speed)</div>
+          <div class="seg" id="segDiff">
+            <button data-diff="easy">Easy</button>
+            <button data-diff="medium">Medium</button>
+            <button data-diff="hard" class="on">Hard</button>
+          </div>
+          <div class="note" id="diffNote">Hard = fastest conkers (current speed). Easier settings slow the swing so it’s simpler to time. In 2‑player, the Host’s choice is used for both.</div>
         </div>
         <div class="toggle" style="margin-bottom:14px">
           <span class="lbl" style="margin:0">Sound effects</span>
@@ -262,7 +277,7 @@
 
   // ---------- game state ----------
   const ST = {AIM:'aim',STRIKE:'strike',FOEWIND:'foewind',FOE:'foe',OVER:'over',NETWAIT:'netwait'};
-  let state, you, foe, charging, pull, aimPhase, foeAnim, fx, shake, t0, lastSwing, chargeStart, aimBase, aimTarget, pressStart, brace, braceFlash=0, flash=0, banner=null, foeWind=null, roundLog=null, floats=[], twitch=null, pows=[], chunks=[], shattered=null;
+  let state, you, foe, charging, pull, aimPhase, foeAnim, fx, shake, t0, lastSwing, chargeStart, aimBase, aimTarget, pressStart, brace, braceFlash=0, flash=0, banner=null, foeWind=null, roundLog=null, floats=[], twitch=null, pows=[], chunks=[], shattered=null, victory=null;
   // ---- control scheme / motion sensors ----
   let controlMode='touch', motionOn=false, useGyro=false, motionSens=1, swingCd=0;
   const sensors={accel:false, gyro:false, orient:false};
@@ -311,7 +326,7 @@
     foe.name = FOES[Math.floor(Math.random()*FOES.length)];
     document.getElementById('foeName').textContent = foe.name;
     charging=false; pull={x:0,y:0,len:0}; aimPhase=Math.random()*Math.PI*2;
-    foeAnim=null; fx=[]; shake=0; lastSwing=null; brace=null; braceFlash=0; flash=0; banner=null; foeWind=null; roundLog=null; floats=[]; twitch=null; pows=[]; chunks=[]; shattered=null;
+    foeAnim=null; fx=[]; shake=0; lastSwing=null; brace=null; braceFlash=0; flash=0; banner=null; foeWind=null; roundLog=null; floats=[]; twitch=null; pows=[]; chunks=[]; shattered=null; victory=null;
     document.getElementById('toast').classList.remove('show');
     state=ST.AIM;
     over.classList.remove('show');
@@ -498,14 +513,18 @@
   // The game only ever asks the transport to send/receive small JSON packets, so swapping
   // PeerJS for native Nearby Connections later means rewriting just this block.
   let opponent='bot';                       // 'bot' | 'online'
-  const net={ peer:null, conn:null, role:null, connected:false, code:null, seed:null, oppName:null, onPacket:null, timer:null };
+  const net={ peer:null, conn:null, role:null, connected:false, code:null, seed:null, oppName:null, onPacket:null, timer:null, lastSeen:0 };
+  let gameDiff='hard';                               // hard = current (fastest) speed
+  const DIFFS={ easy:1.95, medium:1.45, hard:1.0 };
+  function diffMult(){ return DIFFS[gameDiff]||1; }
   const ICE={ iceServers:[
     {urls:'stun:stun.l.google.com:19302'},
     {urls:'stun:stun1.l.google.com:19302'},
     {urls:'stun:stun2.l.google.com:19302'}
   ]};
   const HANDLES=['Bramble','Knuckle','Spike','Ironside','Old Oak','Thwack','Cracker','Gnarls'];
-  function myHandle(){ if(!net._h) net._h=HANDLES[(Math.random()*HANDLES.length)|0]; return net._h; }
+  function myHandle(){ if(net._name && net._name.trim()) return net._name.trim().slice(0,14);
+    if(!net._h) net._h=HANDLES[(Math.random()*HANDLES.length)|0]; return net._h; }
   function setPill(stateCls,txt){
     const p=document.getElementById('netPill'), t=document.getElementById('netPillTxt');
     if(!p)return; p.classList.add('on'); p.classList.remove('connecting','live');
@@ -550,26 +569,41 @@
   }
   function wireConn(){
     net.conn.on('open',()=>{
-      net.connected=true;
-      if(net.role==='host'){ net.seed=(Math.random()*1e9)|0; netSend({t:'hello',name:myHandle(),seed:net.seed}); }
+      net.connected=true; net.lastSeen=performance.now();
+      if(net.role==='host'){ net.seed=(Math.random()*1e9)|0; netSend({t:'hello',name:myHandle(),seed:net.seed,diff:gameDiff}); }
       else { netSend({t:'hello',name:myHandle()}); }
     });
-    net.conn.on('data',d=>{ let m; try{m=JSON.parse(d);}catch(e){return;} handlePacket(m); });
-    net.conn.on('close',()=>{ net.connected=false; netStat('player disconnected','no'); setPill('','disconnected'); });
+    net.conn.on('data',d=>{ let m; try{m=JSON.parse(d);}catch(e){return;} net.lastSeen=performance.now(); handlePacket(m); });
+    net.conn.on('close',()=>{ markDisconnected('player disconnected'); });
   }
   function netSend(obj){ try{ if(net.conn&&net.conn.open) net.conn.send(JSON.stringify(obj)); }catch(e){} }
+  function markDisconnected(reason){
+    if(!net.connected && !net._ready) return;
+    net.connected=false; net._ready=false; net.onPacket=null;
+    netStat((reason||'connection lost')+' — re‑host or re‑join','no');
+    setPill('','connection lost');
+    banner={text:'CONNECTION LOST', t:performance.now(), life:2200, color:'#ff8a5a'};
+    coach('<b>Connection lost.</b> Open <b>Controls → 2 Players</b> to reconnect.');
+    if(state===ST.AIM||state===ST.NETWAIT||state===ST.FOE){ state=ST.NETWAIT; brace=null; foeAnim=null; }
+  }
+  function netHeartbeat(){
+    if(!net.connected) return;
+    netSend({t:'ping'});
+    if(performance.now()-net.lastSeen > 9000) markDisconnected('connection timed out');
+  }
   function handlePacket(m){
     if(m.t==='hello'){
       net.oppName=m.name||'Player';
       if(m.seed!=null) net.seed=m.seed;
-      if(net.role==='host' && net.seed!=null) netSend({t:'seed',seed:net.seed});
+      if(m.diff && DIFFS[m.diff]){ gameDiff=m.diff; syncDiffUI(); }   // host's difficulty wins
+      if(net.role==='host' && net.seed!=null) netSend({t:'seed',seed:net.seed,diff:gameDiff});
       onConnectedReady();
-    } else if(m.t==='seed'){ net.seed=m.seed; onConnectedReady(); }
+    } else if(m.t==='seed'){ net.seed=m.seed; if(m.diff&&DIFFS[m.diff]){gameDiff=m.diff;syncDiffUI();} onConnectedReady(); }
     else if(net.onPacket){ net.onPacket(m); }
   }
   function onConnectedReady(){
     if(net.seed==null||!net.oppName||net._ready) return;
-    net._ready=true; clearTimeout(net.timer);
+    net._ready=true; clearTimeout(net.timer); net.lastSeen=performance.now();
     netStat('connected to '+net.oppName+'  ·  sync '+(net.seed%10000),'ok');
     setPill('live','● '+net.oppName);
     audioUnlock(); sfxConnect();
@@ -586,7 +620,7 @@
     you.score=0; you.max=NET_MAXHP; you.hp=NET_MAXHP;
     foe.score=0; foe.max=NET_MAXHP; foe.hp=NET_MAXHP; foe.name=net.oppName;
     document.getElementById('foeName').textContent=net.oppName;
-    foeAnim=null; charging=false; pull={x:0,y:0,len:0}; brace=null; foeWind=null; floats=[]; pows=[]; chunks=[]; shattered=null;
+    foeAnim=null; charging=false; pull={x:0,y:0,len:0}; brace=null; foeWind=null; floats=[]; pows=[]; chunks=[]; shattered=null; victory=null;
     syncHud();
     net.iAttack = (net.role==='host');     // host strikes first
     banner={text:'CONNECTED', t:performance.now(), life:1500, color:'#5fd36a'};
@@ -602,9 +636,22 @@
   }
   function handleGamePacket(m){
     if(!netActive()) return;
+    net.lastSeen=performance.now();
     if(m.t==='swing' && !net.iAttack){ netIncomingSwing(m); }
+    else if(m.t==='miss' && !net.iAttack){ netIncomingMiss(m); }
     else if(m.t==='brace' && net.iAttack){ netApplyBrace(m); }
     else if(m.t==='rematch'){ startNetMatch(); }
+    else if(m.t==='ping'){ /* keep-alive only */ }
+  }
+  // opponent swung and missed — show it sail past, then it's my turn
+  function netIncomingMiss(m){
+    const a=anchors(), time=performance.now(), r=Math.min(W,H)*0.085;
+    const off=(Math.random()<0.5?-1:1)*r*3.2;
+    foeAnim={kind:'foe',start:{...foePos(time)},tgt:{x:a.you.x+off,y:a.you.y},t0:time,dur:560,fired:false,
+      onImpact:()=>{ sfxPhew(); shake=2; }};
+    toast(`<b>${net.oppName}</b> swung and missed!`);
+    banner={text:'THEY MISSED', t:time, life:1100, color:'#9be8a4'};
+    setTimeout(()=>{ if(netActive()){ net.iAttack=true; netSetTurn(); } }, 1100);
   }
   // I attacked; my opponent braced and sent back the outcome
   function netApplyBrace(m){
@@ -699,13 +746,20 @@
     else if(!netActive()){ sfxCrack(crit); }
 
     if(netActive()){
-      // send the blow; the opponent will brace and report the outcome back
       const r2=Math.min(W,H)*0.085, a=anchors();
       spawnFloat(a.you.x, a.you.y-r2*1.7, `${Math.round(power*100)}% PWR`, '#f4c878', 12);
       spawnFloat(a.you.x, a.you.y-r2*1.1, `${Math.round(aimScore*100)}% ACC`, '#f4c878', 12);
-      netSend({t:'swing', dmg, crit, power:+power.toFixed(3), aimScore:+aimScore.toFixed(3)});
-      state=ST.NETWAIT;
-      coach(connect?`Good hit incoming — <b>${net.oppName}</b> is bracing…`:`Missed — <b>${net.oppName}</b> braces nothing.`);
+      if(connect){
+        netSend({t:'swing', dmg, crit, power:+power.toFixed(3), aimScore:+aimScore.toFixed(3)});
+        state=ST.NETWAIT;
+        coach(`Good hit incoming — <b>${net.oppName}</b> is bracing…`);
+      } else {
+        spawnFloat(impact.x, impact.y-r2*1.3, 'MISS', '#b0a08c', 16);
+        toast('Swing and a miss!');
+        netSend({t:'miss', power:+power.toFixed(3)});
+        state=ST.NETWAIT;
+        net.iAttack=false; setTimeout(netSetTurn, 1500);
+      }
       return;
     }
 
@@ -727,7 +781,7 @@
     const time=performance.now();
     const start = lastSwing.origin || {x:anchors().you.x,y:anchors().you.y};
     const tgt = lastSwing.aimPoint || lastSwing.targetAtFire;
-    const dur = 780;                                // constant flight (the fast conker) — power only changes damage & sway
+    const dur = 780*diffMult();                      // constant flight; difficulty slows it (easier to read)
     foeAnim={kind:'player',start,tgt,t0:time,dur,onImpact,fired:false};
     setStats(lastSwing); // show the read-out as it leaves the hand
   }
@@ -790,7 +844,7 @@
       }
     }
     const a=anchors(), time=performance.now();
-    const dur=700-power*180;                        // slowed & readable: ~520ms (smash) to ~700ms (tap)
+    const dur=(700-power*180)*diffMult();            // difficulty slows the incoming swing → more time to brace
     brace={armed:true,used:false,impactAt:time+dur*0.5,dur,result:null,mit:1};
     roundLog.f={power,acc:aimScore,crit};
     foeAnim={kind:'foe',start:{...foePos(time)},tgt:{x:a.you.x,y:a.you.y},t0:time,dur,fired:false,
@@ -896,18 +950,18 @@
   function tryBrace(){
     if(!brace||!brace.armed||brace.used) return;
     brace.used=true; braceFlash=1;
-    const err=Math.abs(performance.now()-brace.impactAt), d=brace.dur;
-    const core=0.12*d, outer=0.62*d;
+    const err=Math.abs(performance.now()-brace.impactAt);
+    const core=70, outer=175;                       // tight reaction window (ms) — timing actually matters now
     let mit;
-    if(err<=core) mit = 0.06 + 0.18*(err/core);                    // dead-on → 0.06, up to 0.24
-    else if(err<=outer) mit = 0.24 + 0.76*((err-core)/(outer-core)); // ramps to full sooner now
-    else mit = 1;
+    if(err<=core) mit = 0.05 + 0.20*(err/core);                     // dead-on → 0.05, up to 0.25
+    else if(err<=outer) mit = 0.25 + 0.75*((err-core)/(outer-core)); // partial band
+    else mit = 1;                                                    // too early/late (or spammed) = full damage
     brace.mit=mit; brace.err=err;
     brace.result = mit<0.18?'perfect' : mit<0.45?'good' : mit<0.8?'partial' : 'miss';
     coach({perfect:"<b>PERFECT BRACE!</b> The blow rebounds.",
            good:"<b>Well braced</b> — most of it absorbed.",
            partial:"Half-braced — some got through.",
-           miss:"Barely braced — took it nearly flush."}[brace.result]);
+           miss:"Mistimed — took it nearly flush."}[brace.result]);
   }
 
   function applyDamage(target,dmg,crit,at){
@@ -941,7 +995,25 @@
     shattered={who:whoLost, t0:performance.now()};
     state='shatter';                                  // freezes input; nothing responds in this state
     banner={text:'SHATTERED!', t:performance.now(), life:1100, color:'#ff6a4a'};
-    setTimeout(()=> endMatch(whoLost==='foe'), 1050); // let the pieces fly before the verdict
+    setTimeout(()=> startVictory(whoLost==='foe'), 1050); // pieces fly, then the winner gloats
+  }
+  const TAUNT_BY_TIER=['dance','raspberry','fistpump','bow','flex','moon'];
+  function pickTaunt(tier){
+    if(Math.random()<0.6) return TAUNT_BY_TIER[Math.min(tier|0, TAUNT_BY_TIER.length-1)];
+    return TAUNT_BY_TIER[(Math.random()*TAUNT_BY_TIER.length)|0];
+  }
+  function startVictory(won){
+    if(victory) return;
+    const winTier = won ? tierOf(you.score) : tierOf(foe.score);
+    const taunt = pickTaunt(winTier);
+    const fireworks = winTier>=3 || taunt==='moon' || taunt==='fistpump' || Math.random()<0.35;
+    victory={ who: won?'you':'foe', tier:winTier, taunt, t0:performance.now(), dur:3000, fireworks, fwNext:0, fw:[] };
+    state='celebrate';
+    banner={text: won?'YOU WIN!':(foe.name.toUpperCase()+' WINS'), t:performance.now(), life:1500, color: won?'#ffd76a':'#ff8a5a'};
+    if(won) sfxConnect();
+    const tline={dance:'does a little victory jig!',raspberry:'blows a big raspberry!',fistpump:'fist‑pumps the air!',bow:'takes a theatrical bow.',flex:'flexes for the crowd!',moon:'turns and moons you!'}[taunt];
+    coach((won?'<b>Winner!</b> Your conker ':('<b>'+foe.name+'</b> '))+tline);
+    setTimeout(()=> endMatch(won), victory.dur);
   }
   function spawnShatter(x,y,r,tier){
     const T=TIERS[tier||0], cols=[T.shell[0],T.shell[1],T.shell[2],'#caa177'];
@@ -970,9 +1042,111 @@
     ctx.globalAlpha=1;
   }
 
+  // ---------- victory celebration: the winner sprouts limbs and taunts ----------
+  function vLimb(ax,ay,bx,by,w,col){ ctx.strokeStyle=col; ctx.lineCap='round'; ctx.lineWidth=w; ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke(); }
+  function vBlob(x,y,rr,col){ ctx.fillStyle=col; ctx.beginPath(); ctx.arc(x,y,rr,0,7); ctx.fill(); }
+  function drawVictorFace(r,taunt,tt){
+    const ey=-r*0.16, ex=r*0.27;
+    ctx.fillStyle='#241206'; ctx.strokeStyle='#241206'; ctx.lineCap='round';
+    if(taunt==='flex'||taunt==='fistpump'){            // determined ^ ^
+      ctx.lineWidth=r*0.08;
+      ctx.beginPath(); ctx.moveTo(-ex-r*0.12,ey+r*0.04); ctx.lineTo(-ex+r*0.12,ey-r*0.06);
+                       ctx.moveTo(ex-r*0.12,ey-r*0.06); ctx.lineTo(ex+r*0.12,ey+r*0.04); ctx.stroke();
+    } else if(taunt==='raspberry'){                    // cheeky squint
+      ctx.lineWidth=r*0.07;
+      ctx.beginPath(); ctx.arc(-ex,ey,r*0.13,Math.PI*1.05,Math.PI*1.95);
+                       ctx.arc(ex,ey,r*0.13,Math.PI*1.05,Math.PI*1.95); ctx.stroke();
+    } else { vBlob(-ex,ey,r*0.1,'#241206'); vBlob(ex,ey,r*0.1,'#241206'); }
+    if(taunt==='raspberry'){                            // tongue out + waggly-finger nose-thumb
+      ctx.fillStyle='#c84a3a'; ctx.beginPath(); ctx.ellipse(0,r*0.34,r*0.17,r*0.24,0,0,7); ctx.fill();
+      ctx.fillStyle='rgba(255,255,255,.25)'; ctx.beginPath(); ctx.ellipse(0,r*0.28,r*0.06,r*0.1,0,0,7); ctx.fill();
+    } else if(taunt==='moon'){
+    } else {                                            // open grin
+      ctx.fillStyle='#241206'; ctx.beginPath(); ctx.arc(0,r*0.12,r*0.26,0.12*Math.PI,0.88*Math.PI); ctx.fill();
+      ctx.fillStyle='#e88'; ctx.beginPath(); ctx.arc(0,r*0.2,r*0.12,0.1*Math.PI,0.9*Math.PI); ctx.fill();
+    }
+  }
+  function drawBum(r,T,tt){
+    const g=ctx.createRadialGradient(-r*0.3,-r*0.35,r*0.2,0,0,r*1.15);
+    g.addColorStop(0,T.shell[1]); g.addColorStop(1,T.shell[2]);
+    ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(0,r*0.05,r*1.04,r*1.0,0,0,7); ctx.fill();
+    ctx.strokeStyle='rgba(40,20,8,.5)'; ctx.lineWidth=r*0.09; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(0,-r*0.55); ctx.lineTo(0,r*0.62); ctx.stroke();
+    ctx.fillStyle='rgba(255,225,160,.16)';
+    ctx.beginPath(); ctx.ellipse(-r*0.42,-r*0.08,r*0.32,r*0.42,0,0,7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(r*0.42,-r*0.08,r*0.32,r*0.42,0,0,7); ctx.fill();
+  }
+  function drawFireworks(v,time){
+    if(time>v.fwNext){ v.fwNext=time+320+Math.random()*420;
+      const fx0={x:W*(0.18+Math.random()*0.64), y:H*(0.12+Math.random()*0.26), t0:time, col:`hsl(${(Math.random()*360)|0},92%,64%)`, parts:[]};
+      const n=18+((Math.random()*12)|0);
+      for(let i=0;i<n;i++){ const a=Math.PI*2*i/n, sp=1.5+Math.random()*2.2; fx0.parts.push({x:fx0.x,y:fx0.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp}); }
+      v.fw.push(fx0);
+    }
+    for(let i=v.fw.length-1;i>=0;i--){ const f=v.fw[i], age=time-f.t0; if(age>1100){ v.fw.splice(i,1); continue; }
+      const al=1-age/1100; ctx.fillStyle=f.col;
+      for(const p of f.parts){ p.x+=p.vx; p.y+=p.vy; p.vy+=0.028; p.vx*=0.98; p.vy*=0.985;
+        ctx.globalAlpha=Math.max(0,al); ctx.beginPath(); ctx.arc(p.x,p.y,2.1,0,7); ctx.fill(); }
+    }
+    ctx.globalAlpha=1;
+  }
+  function drawVictor(time){
+    const v=victory; if(!v) return;
+    if(v.fireworks) drawFireworks(v,time);
+    const a=anchors(), r=Math.min(W,H)*0.085;
+    const base = v.who==='you'? a.you : a.foe;
+    const tt=Math.max(0,(time-v.t0)/1000);
+    const T=TIERS[v.tier||0], limbCol='#5a3318';
+    let bx=base.x, by=base.y - r*0.15, rot=0, bob=0;
+    // limb endpoints (defaults: arms out, feet under)
+    let lh={x:bx-r*0.95,y:by+r*0.2}, rh={x:bx+r*0.95,y:by+r*0.2};
+    let lf={x:bx-r*0.4,y:by+r*1.15}, rf={x:bx+r*0.4,y:by+r*1.15};
+    let handR=r*0.16;
+    if(v.taunt==='dance'){ const s=Math.sin(tt*9);
+      bob=-Math.abs(Math.sin(tt*9))*r*0.16; rot=s*0.12;
+      lh={x:bx-r*0.9,y:by-r*0.1 - s*r*0.5}; rh={x:bx+r*0.9,y:by-r*0.1 + s*r*0.5};
+      lf={x:bx-r*0.4,y:by+r*1.15+(s>0?-r*0.25:0)}; rf={x:bx+r*0.4,y:by+r*1.15+(s<0?-r*0.25:0)};
+    } else if(v.taunt==='fistpump'){ const j=Math.abs(Math.sin(tt*4.2)), pu=Math.sin(tt*8.4);
+      bob=-j*r*0.55; rh={x:bx+r*0.55,y:by-r*1.15-(pu>0?r*0.25:0)}; lh={x:bx-r*0.7,y:by+r*0.25}; handR=r*0.22;
+      lf={x:bx-r*0.32,y:by+r*1.1}; rf={x:bx+r*0.32,y:by+r*1.1};
+    } else if(v.taunt==='flex'){ const p=Math.sin(tt*6);
+      bob=-r*0.02*p; lh={x:bx-r*0.55,y:by-r*0.45}; rh={x:bx+r*0.55,y:by-r*0.45};
+    } else if(v.taunt==='bow'){ const ph=(tt%1.7)/1.7; rot=(ph<0.5?ph*2:(1-ph)*2)*0.7;
+      lh={x:bx-r*1.05,y:by+r*0.35}; rh={x:bx+r*1.05,y:by+r*0.35};
+    } else if(v.taunt==='raspberry'){ rot=0.1;
+      const nose={x:bx,y:by-r*0.5}; rh={x:nose.x+r*0.28,y:nose.y}; lh={x:bx-r*0.8,y:by+r*0.35};
+    } else if(v.taunt==='moon'){ rot=Math.sin(tt*5)*0.13; bob=Math.sin(tt*5)*r*0.05;
+      lh={x:bx-r*0.85,y:by+r*0.55}; rh={x:bx+r*0.85,y:by+r*0.55};
+      lf={x:bx-r*0.5,y:by+r*1.2}; rf={x:bx+r*0.5,y:by+r*1.2};
+    }
+    ctx.save(); ctx.translate(bx,by+bob); ctx.rotate(rot); ctx.translate(-bx,-(by));
+    // legs (behind)
+    vLimb(bx-r*0.32,by+r*0.7,lf.x,lf.y,r*0.16,limbCol); vBlob(lf.x,lf.y+r*0.04,r*0.13,'#3f2410');
+    vLimb(bx+r*0.32,by+r*0.7,rf.x,rf.y,r*0.16,limbCol); vBlob(rf.x,rf.y+r*0.04,r*0.13,'#3f2410');
+    // body
+    if(v.taunt==='moon'){ ctx.save(); ctx.translate(bx,by); drawBum(r,T,tt); ctx.restore(); }
+    else { drawConker(bx,by,r,1,1,1.0,v.tier,0);
+      ctx.save(); ctx.translate(bx,by); drawVictorFace(r,v.taunt,tt); ctx.restore(); }
+    // arms (front)
+    vLimb(bx-r*0.6,by,lh.x,lh.y,r*0.15,limbCol); vBlob(lh.x,lh.y,handR,'#3f2410');
+    vLimb(bx+r*0.6,by,rh.x,rh.y,r*0.15,limbCol); vBlob(rh.x,rh.y,handR,'#3f2410');
+    if(v.taunt==='raspberry'){                          // waggly fingers off the nose-thumb hand
+      const wig=Math.sin(tt*24)*r*0.13;
+      for(let k=0;k<4;k++){ const fx2=rh.x+r*0.12+k*r*0.1, fy=rh.y-r*0.05;
+        vLimb(rh.x,rh.y,fx2,fy+wig*(k%2?1:-1),r*0.05,'#3f2410'); }
+    }
+    if(v.taunt==='flex'){                               // little bicep bumps
+      ctx.fillStyle=T.shell[1];
+      ctx.beginPath(); ctx.arc(bx-r*0.55,by-r*0.2,r*0.18,0,7); ctx.fill();
+      ctx.beginPath(); ctx.arc(bx+r*0.55,by-r*0.2,r*0.18,0,7); ctx.fill();
+    }
+    ctx.restore();
+  }
+
   // ---------- end / scoring (winner inherits loser's score +1) ----------
   function endMatch(won){
     state=ST.OVER;
+    victory=null;
     const verdict=document.getElementById('verdict');
     const tauntLine=document.getElementById('tauntLine');
     const sub=document.getElementById('overSub');
@@ -1262,7 +1436,7 @@
     }
     drawString(a.foe.x, a.foe.y-r*1.8, fpos.x, fpos.y);
     const exposingNow = state===ST.AIM && charging;
-    if(!(shattered&&shattered.who==='foe'))
+    if(!(shattered&&shattered.who==='foe') && !(victory&&victory.who==='foe'))
       drawConker(fpos.x,fpos.y,r,foe.hp,foe.max, exposingNow && foeExposure(time)>0.78, tierOf(foe.score), fspin);
     lowLifeFx(fpos.x,fpos.y,r,foe.hp/foe.max,time);
 
@@ -1333,7 +1507,7 @@
       }
       drawPowerBar(pull.len);
     }
-    if(!(shattered&&shattered.who==='you'))
+    if(!(shattered&&shattered.who==='you') && !(victory&&victory.who==='you'))
       drawConker(ypos.x,ypos.y,r,you.hp,you.max, state===ST.AIM&&!charging, tierOf(you.score), yspin);
     lowLifeFx(ypos.x,ypos.y,r,you.hp/you.max,time);
 
@@ -1417,6 +1591,7 @@
     }
     drawPows(time);   // comic-book burst on a good strike, above everything
     drawChunks(time); // flying shards from a shattered conker
+    if(victory) drawVictor(time);  // winner's celebratory taunt
   }
   function easeIn(t){return t*t*(3-2*t);}
 
@@ -1480,10 +1655,26 @@
     joinGame(code);
   });
 
+  document.getElementById('nameInput').addEventListener('input',function(){ net._name=this.value; });
+  document.querySelectorAll('#segDiff button').forEach(b=>b.addEventListener('click',()=>{
+    gameDiff=b.dataset.diff;
+    document.querySelectorAll('#segDiff button').forEach(x=>x.classList.toggle('on',x===b));
+    // host can change it live and push to the joined player
+    if(netActive() && net.role==='host'){ netSend({t:'seed',seed:net.seed,diff:gameDiff}); }
+  }));
+  function syncDiffUI(){ document.querySelectorAll('#segDiff button').forEach(x=>x.classList.toggle('on',x.dataset.diff===gameDiff)); }
+
   // ---------- boot ----------
   resize();
   newMatch(false);
-  if(typeof setInterval==='function') setInterval(setDiag,150);   // live sensor diagnostics
+  if(typeof setInterval==='function'){ setInterval(setDiag,150); setInterval(netHeartbeat,3000); }
+  if(typeof document!=='undefined' && document.addEventListener){
+    document.addEventListener('visibilitychange',()=>{
+      if(document.visibilityState==='visible' && net._ready && performance.now()-net.lastSeen>5000){
+        markDisconnected('connection dropped while away');
+      }
+    });
+  }
   requestAnimationFrame(frame);
 })();
 </script>
