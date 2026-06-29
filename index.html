@@ -97,6 +97,13 @@
   #settings{position:absolute;inset:0;z-index:22;display:none;align-items:center;justify-content:center;
     padding:18px;background:rgba(12,7,4,.85);backdrop-filter:blur(3px);overflow-y:auto}
   #settings.show{display:flex}
+  #howPanel{position:absolute;inset:0;z-index:23;display:none;align-items:center;justify-content:center;
+    padding:18px;background:rgba(12,7,4,.85);backdrop-filter:blur(3px);overflow-y:auto}
+  #howPanel.show{display:flex}
+  .how-body{max-height:64vh;overflow-y:auto;padding-right:6px;font-size:13.5px;line-height:1.5;color:var(--text)}
+  .how-body h4{font-family:var(--display);font-size:14px;margin:13px 0 3px;color:var(--gold)}
+  .how-body p{margin:0 0 8px;color:#e7d8c2}
+  .how-body b{color:#fff2dc}
   .set-card{background:linear-gradient(180deg,#3a2417,#281710);border:1px solid rgba(184,155,110,.3);
     border-radius:16px;padding:18px;max-width:36ch;width:100%;box-shadow:0 18px 40px rgba(0,0,0,.5);
     max-height:88vh;overflow-y:auto;margin:auto}
@@ -208,11 +215,21 @@
         <div class="set-row">
           <div class="lbl">Difficulty (target speed)</div>
           <div class="seg" id="segDiff">
+            <button data-diff="sitter">Sitter</button>
             <button data-diff="easy">Easy</button>
             <button data-diff="medium" class="on">Medium</button>
             <button data-diff="hard">Hard</button>
           </div>
-          <div class="note" id="diffNote">Changes how fast the <b>target</b> conker sways (not your own swing). A slower target is harder to time, so <b>Hard = slow sway</b>, Easy = quick. In 2‑player the Host’s choice is used for both.</div>
+          <div class="note" id="diffNote">Changes how fast the <b>target</b> conker sways. A faster target is harder to time, so <b>Hard = quick sway</b>, Easy = slow, and <b>Sitter</b> holds it dead still. In 2‑player the Host’s choice syncs to both.</div>
+        </div>
+        <div class="set-row">
+          <div class="lbl">Match format</div>
+          <div class="seg" id="segFmt">
+            <button data-len="1" class="on">Single</button>
+            <button data-len="3">Best of 3</button>
+            <button data-len="5">Best of 5</button>
+          </div>
+          <div class="note" id="fmtNote">In a Best‑of series, win the series to <b>rank up</b> a level and lose it to <b>rank down</b> — but you never drop to the very bottom. In 2‑player the Host picks the format.</div>
         </div>
         <div class="toggle" style="margin-bottom:14px">
           <span class="lbl" style="margin:0">Sound effects</span>
@@ -227,14 +244,45 @@
           <div class="note" id="modeNote">Touch: drag to aim &amp; set power. Tilt + pull: tilt the phone to aim, drag back to set power, release to strike.</div>
         </div>
         <div class="set-row" id="motionSetup" style="display:none">
-          <button class="ghost" id="enableMotion" style="width:100%;margin-bottom:10px">Enable tilt sensor</button>
           <div class="statrow"><span>Tilt sensor (aim)</span><span id="stTilt" class="no">waiting…</span></div>
+          <button class="ghost" id="retryMotion" style="display:none;width:100%;margin-top:8px">Allow tilt access</button>
           <div style="margin-top:12px">
             <div class="lbl">Aim sensitivity</div>
             <input type="range" id="sens" min="0.6" max="1.7" step="0.05" value="1">
           </div>
         </div>
         <button id="setClose" style="width:100%;margin-top:6px">Done</button>
+      </div>
+    </div>
+    <div id="howPanel">
+      <div class="set-card">
+        <h3>How to play</h3>
+        <div class="how-body">
+          <p><b>The idea.</b> Two conkers duel. You take turns: on <b>your turn</b> you strike the other conker; on <b>their turn</b> you brace against their blow. First to smash the other wins.</p>
+
+          <h4>Striking</h4>
+          <p><b>Touch mode:</b> press and <b>drag down &amp; back</b> from your conker. The further you pull, the more <b>power</b> — but a big pull <b>sways your aim</b>, so it's a trade‑off. The angle you drag sets the direction. Release to let fly.</p>
+          <p><b>Tilt + pull mode:</b> <b>tilt the phone</b> left/right to aim, drag back with your finger for power only, release to strike.</p>
+          <p>Your conker takes a moment to fly, and the target is moving — so you must <b>lead it</b>: aim where the target <i>will be</i>, not where it is. Damage = <b>power × accuracy × timing</b>. The hardest hits land when the pale <b>scar faces you</b> as the conker arrives (the “sweet spot” — a faint ring pulses when it's lined up).</p>
+
+          <h4>Bracing</h4>
+          <p>When it's the other conker's turn, watch for the <b>wind‑up</b> warning, then <b>tap</b> right as the swing lands to brace. Timing is everything: a perfectly‑timed brace blocks almost everything and even <b>rebounds</b> damage back. Tap <b>too early</b> and you <b>flinch</b> — wasting it. Mistime it and you take the blow flush.</p>
+
+          <h4>Tactics</h4>
+          <p>• Big power isn't always best — a wild, hard swing is easy to miss. A controlled, well‑timed hit on the sweet spot often does more.<br>
+          • Be patient on defence. Don't mash the screen — wait for the actual swing.<br>
+          • Watch the target's rhythm and fire <b>ahead</b> of it.</p>
+
+          <h4>Difficulty</h4>
+          <p>Changes how fast the <b>target</b> sways: <b>Sitter</b> (dead still) → <b>Easy</b> → <b>Medium</b> → <b>Hard</b> (fast). A faster target is harder to lead and time.</p>
+
+          <h4>Ranks &amp; series</h4>
+          <p>Win and your conker <b>hardens up a rank</b> (Fresh → Seasoned → … → King), gaining life. In a <b>Best‑of</b> series you rank up one level for winning the series and down one for losing — but you never drop to the very bottom.</p>
+
+          <h4>2‑player</h4>
+          <p>One phone <b>Hosts</b> and shows a code; the other <b>Joins</b> with it. Both phones must be on the <b>same Wi‑Fi</b>. The Host picks the difficulty for both.</p>
+        </div>
+        <button id="howClose" style="width:100%;margin-top:10px">Got it</button>
       </div>
     </div>
   </div>
@@ -288,6 +336,14 @@
   ];
   const tierOf = s => s>=24?6 : s>=16?5 : s>=10?4 : s>=6?3 : s>=3?2 : s>=1?1 : 0;
   const maxHpFor = s => 100 + tierOf(s)*18;   // 100,118,136,154,172,190,208
+  const TIER_SCORE=[0,1,3,6,10,16,24];        // lowest score that lands in each tier
+  function rankUpScore(score){ return TIER_SCORE[Math.min(6, tierOf(score)+1)]; }
+  function rankDownScore(score){ return TIER_SCORE[Math.max(0, tierOf(score)-1)]; }
+  // best-of series state
+  let seriesLen=1;                            // 1 = single game, 3 or 5 = best-of
+  function seriesNeed(){ return Math.ceil(seriesLen/2); }   // wins needed: 1 / 2 / 3
+  const series={ youW:0, foeW:0, round:1 };
+  function resetSeries(){ series.youW=0; series.foeW=0; series.round=1; }
 
   // ---------- game state ----------
   const ST = {AIM:'aim',STRIKE:'strike',FOEWIND:'foewind',FOE:'foe',OVER:'over',NETWAIT:'netwait'};
@@ -329,6 +385,18 @@
   function sfxBoo(){ aTone(300,0,0.4,'sawtooth',0.16,150); aTone(296,0.0,0.4,'sawtooth',0.12,150); aTone(452,0.02,0.36,'triangle',0.06,180); } // crowd "booo"
   function sfxShatter(){ aTone(90,0,0.5,'triangle',0.5,40); aNoise(0.5,0,0.5,'lowpass',1600,0.6,200); aNoise(0.18,0,0.4,'highpass',2000,0.7); } // big crack + debris
   function sfxConnect(){ aTone(523,0,0.14,'triangle',0.22); aTone(659,0.12,0.14,'triangle',0.22); aTone(784,0.24,0.2,'triangle',0.24); } // rising chime
+  // short, memorable victory fanfare (chiptune)
+  function playVictoryTune(){
+    if(!actx||!soundOn) return;
+    const mel=[[523,0.00,0.12],[659,0.12,0.12],[784,0.24,0.12],[1047,0.38,0.16],[880,0.56,0.10],[1047,0.68,0.36]];
+    mel.forEach(([f,t,d])=>aTone(f,t,d,'square',0.16));
+    aTone(1319,0.68,0.36,'triangle',0.08); aTone(1568,0.68,0.36,'triangle',0.06); // sparkle on the last note
+    aTone(131,0.00,0.5,'triangle',0.12); aTone(196,0.38,0.42,'triangle',0.10);     // soft bass
+  }
+  function playLossSting(){
+    if(!actx||!soundOn) return;
+    aTone(392,0.00,0.18,'triangle',0.14,360); aTone(330,0.18,0.18,'triangle',0.13,300); aTone(262,0.36,0.34,'triangle',0.13,220);
+  }
 
   function freshConker(score){const m=maxHpFor(score);return {hp:m,max:m,score:score};}
 
@@ -345,6 +413,9 @@
     state=ST.AIM;
     over.classList.remove('show');
     if(typeof setTurnTag==='function') setTurnTag(null);
+    if(seriesLen>1 && opponent!=='online'){
+      banner={text:'BEST OF '+seriesLen+' — ROUND '+series.round+'  ('+series.youW+'–'+series.foeW+')', t:performance.now(), life:1600, color:'#f2c879'};
+    }
     syncHud();
     coach("Pull <b>down &amp; back</b> to wind up. The harder you pull, the further back you load — more power, but <b>harder to aim</b>.");
     setStats(null);
@@ -369,6 +440,7 @@
   // ---------- foe pendulum sway (the timing target) ----------
   function foeAngle(time){
     // sways side to side; scar faces you when angle near 0 -> sweet spot
+    if(swayMult()===0) return 0;                      // 'sitter' — dead still, centred, facing you
     return Math.sin(time*0.0018*swayMult() + foeSwayPhase)*1.05;
   }
   let foeSwayPhase = Math.random()*6.28;
@@ -524,7 +596,9 @@
   }
   function updateSensorUI(){
     const T=document.getElementById('stTilt');
-    if(T){ T.textContent=sensors.orient?'detected — ready':'waiting…'; T.className=sensors.orient?'ok':'no'; }
+    if(T){ T.textContent=sensors.orient?'detected — ready':(motionOn?'starting…':'tap “Allow tilt access”'); T.className=sensors.orient?'ok':'no'; }
+    const rb=document.getElementById('retryMotion');
+    if(rb) rb.style.display = (controlMode==='motion' && !sensors.orient) ? 'block' : 'none';
   }
 
   // ---------- networking (online transport now; the same packets ride Bluetooth later) ----------
@@ -534,8 +608,8 @@
   const net={ peer:null, conn:null, role:null, connected:false, code:null, seed:null, oppName:null, onPacket:null, timer:null, lastSeen:0 };
   let gameDiff='medium';                             // medium = current speed
   // difficulty changes how fast the TARGET conker sways. Faster target = harder to lead/time.
-  const SWAY={ easy:0.6, medium:1.0, hard:1.65 };    // easy = slow sway (easiest), hard = quick sway (hardest)
-  function swayMult(){ return SWAY[gameDiff]||1; }
+  const SWAY={ sitter:0, easy:0.6, medium:1.0, hard:1.65 };  // sitter = dead still; easy slow … hard quick
+  function swayMult(){ const m=SWAY[gameDiff]; return (m==null)?1:m; }   // note: 0 is valid (sitter), so no `|| 1`
   const ICE={ iceServers:[
     {urls:'stun:stun.l.google.com:19302'},
     {urls:'stun:stun1.l.google.com:19302'},
@@ -589,8 +663,9 @@
   function wireConn(){
     net.conn.on('open',()=>{
       net.connected=true; net.lastSeen=performance.now();
-      if(net.role==='host'){ net.seed=(Math.random()*1e9)|0; netSend({t:'hello',name:myHandle(),seed:net.seed,diff:gameDiff}); }
-      else { netSend({t:'hello',name:myHandle()}); }
+      const myRank=tierOf(you.score);
+      if(net.role==='host'){ net.seed=(Math.random()*1e9)|0; netSend({t:'hello',name:myHandle(),seed:net.seed,diff:gameDiff,fmt:seriesLen,rank:myRank}); }
+      else { netSend({t:'hello',name:myHandle(),rank:myRank}); }
     });
     net.conn.on('data',d=>{ let m; try{m=JSON.parse(d);}catch(e){return;} net.lastSeen=performance.now(); handlePacket(m); });
     net.conn.on('close',()=>{ markDisconnected('player disconnected'); });
@@ -606,7 +681,7 @@
     try{ if(net.conn) net.conn.close(); }catch(e){}
     try{ if(net.peer) net.peer.destroy(); }catch(e){}
     net.conn=null; net.peer=null; net.connected=false; net._ready=false; net.onPacket=null;
-    net.oppName=null; net.seed=null; net.role=null; net.sentWind=false; net.flinched=false; net.iAttack=false;
+    net.oppName=null; net.seed=null; net.role=null; net.sentWind=false; net.flinched=false; net.iAttack=false; net.oppRank=0;
     netUIDisconnected();
     const pill=document.getElementById('netPill'); if(pill) pill.classList.remove('on');
     document.getElementById('codeShow').style.display='none';
@@ -632,12 +707,15 @@
   function handlePacket(m){
     if(m.t==='hello'){
       net.oppName=m.name||'Player';
+      if(m.rank!=null) net.oppRank=m.rank|0;
       if(m.seed!=null) net.seed=m.seed;
       if(m.diff && SWAY[m.diff]){ gameDiff=m.diff; syncDiffUI(); }   // host's difficulty wins
-      if(net.role==='host' && net.seed!=null) netSend({t:'seed',seed:net.seed,diff:gameDiff});
+      if(m.fmt!=null){ seriesLen=m.fmt; syncFmtUI(); }               // host's format wins
+      if(net.role==='host' && net.seed!=null) netSend({t:'seed',seed:net.seed,diff:gameDiff,fmt:seriesLen,rank:tierOf(you.score)});
       onConnectedReady();
-    } else if(m.t==='seed'){ net.seed=m.seed; if(m.diff&&SWAY[m.diff]){gameDiff=m.diff;syncDiffUI();} onConnectedReady(); }
+    } else if(m.t==='seed'){ net.seed=m.seed; if(m.rank!=null)net.oppRank=m.rank|0; if(m.diff&&SWAY[m.diff]){gameDiff=m.diff;syncDiffUI();} if(m.fmt!=null){seriesLen=m.fmt;syncFmtUI();} onConnectedReady(); }
     else if(m.t==='diff'){ if(SWAY[m.diff]){ gameDiff=m.diff; syncDiffUI(); banner={text:'DIFFICULTY: '+m.diff.toUpperCase(),t:performance.now(),life:1300,color:'#f2c879'}; } }
+    else if(m.t==='fmt'){ seriesLen=m.len; syncFmtUI(); banner={text:seriesLen>1?('BEST OF '+seriesLen):'SINGLE GAME',t:performance.now(),life:1300,color:'#f2c879'}; }
     else if(net.onPacket){ net.onPacket(m); }
   }
   function onConnectedReady(){
@@ -648,6 +726,7 @@
     { const db=document.getElementById('disconnectBtn'); if(db) db.style.display='block'; }
     audioUnlock(); sfxConnect();
     foeSwayPhase = (net.seed % 6283) / 1000;
+    resetSeries(); seriesPending=null;
     startNetMatch();
   }
   function netActive(){ return opponent==='online' && net.connected && net._ready; }
@@ -656,16 +735,16 @@
     net.onPacket=handleGamePacket;
     if(setPanel) setPanel.classList.remove('show');
     over.classList.remove('show');
-    // both conkers start equal so the two phones stay in lockstep
-    you.score=0; you.max=NET_MAXHP; you.hp=NET_MAXHP;
-    foe.score=0; foe.max=NET_MAXHP; foe.hp=NET_MAXHP; foe.name=net.oppName;
+    // HP is equal on both phones for fairness; rank is cosmetic + drives the series ladder
+    you.max=NET_MAXHP; you.hp=NET_MAXHP;               // keep your.score (your rank) as it stands
+    foe.score=TIER_SCORE[net.oppRank||0]; foe.max=NET_MAXHP; foe.hp=NET_MAXHP; foe.name=net.oppName;
     document.getElementById('foeName').textContent=net.oppName;
     foeAnim=null; charging=false; pull={x:0,y:0,len:0}; brace=null; foeWind=null; floats=[]; pows=[]; chunks=[]; shattered=null; victory=null;
     syncHud();
     net.iAttack = (net.role==='host');     // host strikes first
-    if(net.role==='host') netSend({t:'diff',diff:gameDiff});   // make sure both phones agree at kickoff
-    syncDiffUI();
-    banner={text:'CONNECTED', t:performance.now(), life:1500, color:'#5fd36a'};
+    if(net.role==='host'){ netSend({t:'diff',diff:gameDiff}); netSend({t:'fmt',len:seriesLen}); }
+    syncDiffUI(); syncFmtUI();
+    banner={text: seriesLen>1?('BEST OF '+seriesLen+' — ROUND '+series.round):'CONNECTED', t:performance.now(), life:1500, color:'#5fd36a'};
     setTimeout(netSetTurn, 900);
   }
   function setTurnTag(kind,text){
@@ -694,7 +773,7 @@
     else if(m.t==='miss' && !net.iAttack){ if(net.flinchedVoid){ net.flinchedVoid=false; return; } netIncomingMiss(m); }
     else if(m.t==='flinch' && net.iAttack){ netOpponentFlinched(); }
     else if(m.t==='brace' && net.iAttack){ netApplyBrace(m); }
-    else if(m.t==='rematch'){ startNetMatch(); }
+    else if(m.t==='rematch'){ if(m.rank!=null)net.oppRank=m.rank|0; if(!m.round){ resetSeries(); seriesPending=null; } startNetMatch(); }
     else if(m.t==='ping'){ /* keep-alive only */ }
   }
   // opponent has started winding up — telegraph it so you know a conker is coming
@@ -1102,7 +1181,7 @@
               loserAt:{x:W*0.5, y:H*0.82} };
     state='celebrate'; if(typeof setTurnTag==='function') setTurnTag(null);
     banner={text: won?'YOU WIN!':(foe.name.toUpperCase()+' WINS'), t:performance.now(), life:1500, color: won?'#ffd76a':'#ff8a5a'};
-    if(won) sfxConnect();
+    if(won){ sfxConnect(); playVictoryTune(); } else { playLossSting(); }
     const tline={dance:'does a little victory jig!',raspberry:'blows a big raspberry!',fistpump:'fist‑pumps the air!',bow:'takes a theatrical bow.',flex:'flexes for the crowd!',moon:'turns and moons you!',pee:'relieves itself on the loser!'}[taunt];
     coach((won?'<b>Winner!</b> Your conker ':('<b>'+foe.name+'</b> '))+tline);
     setTimeout(()=> endMatch(won), victory.dur);
@@ -1294,29 +1373,64 @@
     ctx.restore();
   }
 
-  // ---------- end / scoring (winner inherits loser's score +1) ----------
+  // ---------- end / scoring ----------
+  let seriesPending=null;                              // null | 'round' | 'seriesend'
+  function oppLabel(){ return foe.name||'Foe'; }
   function endMatch(won){
     state=ST.OVER;
     victory=null; if(typeof setTurnTag==='function') setTurnTag(null);
     const verdict=document.getElementById('verdict');
     const tauntLine=document.getElementById('tauntLine');
     const sub=document.getElementById('overSub');
+    const again=document.getElementById('again');
+    burst(won?anchors().foe.x:anchors().you.x, won?anchors().foe.y:anchors().you.y, won?46:40, true); shake=won?18:16;
+
+    if(seriesLen>1){
+      if(won) series.youW++; else series.foeW++;
+      const need=seriesNeed(), decided = series.youW>=need || series.foeW>=need;
+      const tally = `<b>You ${series.youW}</b> – <b>${series.foeW} ${oppLabel()}</b>`;
+      if(!decided){
+        verdict.textContent = won?'ROUND WON':'ROUND LOST';
+        verdict.className = won?'verdict win':'verdict lose';
+        tauntLine.textContent = `Best of ${seriesLen} — first to ${need} wins`;
+        sub.innerHTML = `${tally}. ${won?'Keep it up!':'Still in it — fight back!'}`;
+        seriesPending='round'; again.textContent='Next round';
+      } else {
+        const wonSeries = series.youW>=need;
+        const beforeTier=tierOf(you.score);
+        you.score = wonSeries ? rankUpScore(you.score) : rankDownScore(you.score);
+        const afterTier=tierOf(you.score), tname=TIERS[afterTier].name;
+        verdict.textContent = wonSeries?'SERIES WON!':'SERIES LOST';
+        verdict.className = wonSeries?'verdict win':'verdict lose';
+        tauntLine.textContent = wonSeries ? TAUNTS[+tauntSel.value] : `“${foe.name}” takes the series.`;
+        const rankMsg = afterTier!==beforeTier
+          ? `Your conker ${wonSeries?'<b style="color:var(--gold)">ranks up</b>':'<b>ranks down</b>'} to <b style="color:var(--gold)">${tname}</b>.`
+          : (wonSeries?`Already a <b>${tname}</b> — top of the heap.`:`Holds at <b>${tname}</b> — can't drop lower.`);
+        sub.innerHTML = `Final: <b>${series.youW}</b>–<b>${series.foeW}</b>. ${rankMsg}`;
+        seriesPending='seriesend'; again.textContent='New series';
+      }
+      over.classList.add('show');
+      return;
+    }
+
+    // ----- single game (classic conker rule) -----
+    seriesPending=null; again.textContent='New challenger';
     if(won){
       const before=you.score, bTier=tierOf(before), bMax=maxHpFor(before);
-      you.score = you.score + foe.score + 1;       // classic conker rule
+      if(opponent!=='online') you.score = you.score + foe.score + 1;   // classic rule (offline progression)
       const aTier=tierOf(you.score), aMax=maxHpFor(you.score);
       verdict.textContent="SMASHED!"; verdict.className="verdict win";
       tauntLine.textContent = TAUNTS[+tauntSel.value];
       const rankMsg = aTier>bTier
         ? ` It hardened into a <b style="color:var(--gold)">${TIERS[aTier].name}</b> conker — <b style="color:var(--gold)">+${aMax-bMax} life</b>.`
         : '';
-      sub.innerHTML = `Your ${ordName(before)} beat ${ordName(foe.score)} — now it's <b style="color:var(--gold)">${ordName(you.score)}</b>.${rankMsg} It carries that into the next bout.`;
-      burst(anchors().foe.x,anchors().foe.y,46,true); shake=18;
+      sub.innerHTML = opponent==='online'
+        ? `You smashed <b>${foe.name}</b>! Tap <b>New challenger</b> for a rematch.`
+        : `Your ${ordName(before)} beat ${ordName(foe.score)} — now it's <b style="color:var(--gold)">${ordName(you.score)}</b>.${rankMsg} It carries that into the next bout.`;
     } else {
       verdict.textContent="SHATTERED"; verdict.className="verdict lose";
       tauntLine.textContent = `“${foe.name}” chalks up the win.`;
       sub.innerHTML = `Your conker is done. Read the <b>scar timing</b> next round — hit while it faces you.`;
-      burst(anchors().you.x,anchors().you.y,40,true); shake=16;
     }
     over.classList.add('show');
   }
@@ -1763,29 +1877,44 @@
   // ---------- buttons ----------
   const over=document.getElementById('over');
   document.getElementById('again').addEventListener('click',()=>{ audioUnlock();
-    if(netActive()){ netSend({t:'rematch'}); startNetMatch(); }
-    else newMatch(you.hp>0);
+    const roundContinue = seriesPending==='round';
+    if(!roundContinue) resetSeries();                 // new series (or single game)
+    if(roundContinue) series.round++;
+    if(netActive()){
+      netSend({t:'rematch', round:roundContinue, rank:tierOf(you.score)});
+      startNetMatch();
+    } else {
+      if(seriesLen>1) newMatch(true);                 // series: keep your rank, fresh HP & foe
+      else newMatch(you.hp>0);                         // single game: classic
+    }
+    seriesPending=null;
   });
   document.getElementById('how').addEventListener('click',()=>{
-    coach("The foe sways across the arena and your strike takes time to fly — <b>aim ahead of them</b> so they sway into it. Damage = <b>power × aim × timing</b> (the scar facing you as it lands hits hardest). When they swing back, <b>tap to brace</b> as it connects.");
+    document.getElementById('howPanel').classList.add('show');
+  });
+  document.getElementById('howClose').addEventListener('click',()=>{
+    document.getElementById('howPanel').classList.remove('show');
   });
 
   // ---------- settings / controls panel ----------
   const setPanel=document.getElementById('settings');
-  document.getElementById('settingsBtn').addEventListener('click',()=>{ audioUnlock(); updateSensorUI(); setPanel.classList.add('show'); });
+  document.getElementById('settingsBtn').addEventListener('click',()=>{ audioUnlock(); updateSensorUI(); if(typeof syncDiffUI==='function')syncDiffUI(); if(typeof syncFmtUI==='function')syncFmtUI(); setPanel.classList.add('show'); });
   document.getElementById('setClose').addEventListener('click',()=>setPanel.classList.remove('show'));
   document.querySelectorAll('#segMode button').forEach(b=>b.addEventListener('click',()=>{
     controlMode=b.dataset.mode;
     document.querySelectorAll('#segMode button').forEach(x=>x.classList.toggle('on',x===b));
     document.getElementById('motionSetup').style.display = controlMode==='motion' ? 'block' : 'none';
-    coach(controlMode==='motion'
-      ? "Tilt + pull: <b>tilt the phone</b> to aim, <b>drag back</b> to set power, release to strike."
-      : "Touch: <b>drag down &amp; back</b> to aim and set power, release to swing.");
+    if(controlMode==='motion'){
+      audioUnlock();
+      if(!motionOn){ enableMotion(); }                 // selecting Tilt+pull is the gesture that grants sensor access
+      setTimeout(updateSensorUI,400); setTimeout(updateSensorUI,1600);
+      coach("Tilt + pull: <b>tilt the phone</b> to aim, <b>drag back</b> to set power, release to strike.");
+    } else {
+      coach("Touch: <b>drag down &amp; back</b> to aim and set power, release to swing.");
+    }
   }));
-  document.getElementById('enableMotion').addEventListener('click',()=>{
-    audioUnlock(); enableMotion();
-    document.getElementById('enableMotion').textContent='Listening for tilt…';
-    setTimeout(updateSensorUI,400); setTimeout(updateSensorUI,1500);
+  document.getElementById('retryMotion').addEventListener('click',()=>{
+    audioUnlock(); enableMotion(); setTimeout(updateSensorUI,400); setTimeout(updateSensorUI,1600);
   });
   document.getElementById('sens').addEventListener('input',function(){ motionSens=parseFloat(this.value); });
   document.getElementById('soundToggle').addEventListener('click',function(){
@@ -1809,6 +1938,7 @@
     const pill=document.getElementById('netPill');
     if(online){ setPill('','offline'); } else { pill.classList.remove('on'); }
     setTurnTag(null);
+    resetSeries(); seriesPending=null;
     newMatch(false);                                  // always reset the arena to a fresh game
   }));
   document.getElementById('disconnectBtn').addEventListener('click',()=>{
@@ -1851,12 +1981,31 @@
     const dn=document.getElementById('diffNote');
     if(dn) dn.innerHTML = joinerLocked
       ? 'Difficulty is set by the <b>Host</b> in a 2‑player game — currently <b>'+gameDiff+'</b>.'
-      : 'Changes how fast the <b>target</b> conker sways. A faster target is harder to time, so <b>Hard = quick sway</b>, Easy = slow. In 2‑player the Host’s choice syncs to both.';
+      : 'Changes how fast the <b>target</b> conker sways. A faster target is harder to time, so <b>Hard = quick sway</b>, Easy = slow, and <b>Sitter</b> holds it still. In 2‑player the Host’s choice syncs to both.';
+  }
+  document.querySelectorAll('#segFmt button').forEach(b=>b.addEventListener('click',()=>{
+    if(netActive() && net.role!=='host'){
+      banner={text:'HOST SETS FORMAT',t:performance.now(),life:1300,color:'#f2a03d'};
+      coach('In a 2‑player game, the <b>Host</b> chooses the match format.'); syncFmtUI(); return;
+    }
+    seriesLen=parseInt(b.dataset.len,10)||1; resetSeries();
+    document.querySelectorAll('#segFmt button').forEach(x=>x.classList.toggle('on',x===b));
+    if(netActive() && net.role==='host'){ netSend({t:'fmt',len:seriesLen}); }
+  }));
+  function syncFmtUI(){
+    document.querySelectorAll('#segFmt button').forEach(x=>x.classList.toggle('on',parseInt(x.dataset.len,10)===seriesLen));
+    const joinerLocked = netActive() && net.role!=='host';
+    document.querySelectorAll('#segFmt button').forEach(x=>{ x.style.opacity=joinerLocked?'.45':'1'; });
+    const fn=document.getElementById('fmtNote');
+    if(fn) fn.innerHTML = joinerLocked
+      ? 'Format is set by the <b>Host</b> — currently <b>'+(seriesLen>1?('Best of '+seriesLen):'Single game')+'</b>.'
+      : 'In a Best‑of series, win the series to <b>rank up</b> a level and lose it to <b>rank down</b> — but you never drop to the very bottom. In 2‑player the Host picks the format.';
   }
 
   // ---------- boot ----------
   resize();
   newMatch(false);
+  syncDiffUI(); syncFmtUI();
   if(typeof setInterval==='function'){ setInterval(setDiag,150); setInterval(netHeartbeat,3000); }
   if(typeof document!=='undefined' && document.addEventListener){
     document.addEventListener('visibilitychange',()=>{
