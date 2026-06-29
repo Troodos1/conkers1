@@ -42,10 +42,10 @@
   .title .tag{font-size:11px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase}
   .bars{display:flex;gap:12px}
   .fighter{flex:1;min-width:0}
-  .fighter .row{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:4px}
-  .fighter .name{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
-    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .fighter .sixer{font-family:var(--display);font-weight:700;font-size:13px;color:var(--gold)}
+  .fighter .row{margin-bottom:4px;min-height:34px}
+  .fighter .name{display:block;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--text);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3;opacity:.85}
+  .fighter .sixer{display:block;font-family:var(--display);font-weight:700;font-size:12.5px;color:var(--gold);line-height:1.25}
   .hpbar{height:9px;border-radius:6px;background:#1c110a;overflow:hidden;
     box-shadow:inset 0 1px 2px rgba(0,0,0,.6)}
   .hpfill{height:100%;width:100%;border-radius:6px;transition:width .35s cubic-bezier(.3,.9,.3,1)}
@@ -56,7 +56,7 @@
   canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
   /* ---- Bottom HUD ---- */
   #foot{position:relative;z-index:5;padding:8px 16px 16px;display:flex;flex-direction:column;gap:10px}
-  #coach{font-size:12.5px;color:var(--muted);min-height:18px;text-align:center;line-height:1.35}
+  #coach{font-size:12.5px;color:var(--muted);min-height:36px;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1.35}
   #coach b{color:var(--ember-hot);font-weight:700}
   .controls{display:flex;gap:8px;align-items:center}
   .taunt-wrap{flex:1;position:relative}
@@ -198,6 +198,11 @@
           <div class="note" id="oppNote">Practice against the computer — play offline, anytime.</div>
         </div>
         <div class="set-row" id="lobby" style="display:none">
+          <div class="seg" id="modeSeg" style="margin-bottom:6px">
+            <button class="ghost" id="modeNearby" data-mode="nearby">Nearby · offline</button>
+            <button class="ghost" id="modeOnline" data-mode="online">Online · internet</button>
+          </div>
+          <div class="note" id="modeNote" style="margin-bottom:8px"></div>
           <div class="seg" style="margin-bottom:8px">
             <button class="ghost" id="hostBtn">Host a game</button>
             <button class="ghost" id="joinBtn">Join a game</button>
@@ -284,13 +289,21 @@
           • Watch the target's rhythm and fire <b>ahead</b> of it.</p>
 
           <h4>Difficulty</h4>
-          <p>Changes how fast the <b>target</b> sways: <b>Sitter</b> (dead still) → <b>Easy</b> → <b>Medium</b> → <b>Hard</b> (fast). A faster target is harder to lead and time.</p>
+          <p>Changes how fast the <b>target</b> sways: <b>Sitter</b> (dead still) → <b>Easy</b> → <b>Medium</b> → <b>Hard</b> (fast). A faster target is harder to lead and time. In 2‑player the <b>Host</b> sets it for both.</p>
 
-          <h4>Ranks &amp; series</h4>
-          <p>Win and your conker <b>hardens up a rank</b> (Fresh → Seasoned → … → King), gaining life. In a <b>Best‑of</b> series you rank up one level for winning the series and down one for losing — but you never drop to the very bottom.</p>
+          <h4>Ranks (they stick)</h4>
+          <p>Win and your conker <b>hardens up a rank</b> (Fresh → Seasoned → … → King), gaining life; lose and it <b>softens down</b> one rank (never below the bottom). Your rank is <b>saved on your phone</b> and carries across every game and mode until you derank. A <b>Best‑of</b> series ranks you up or down once for the whole series.</p>
+
+          <h4>Handicap (underdog aid)</h4>
+          <p>In <b>Controls</b> you can switch on a handicap: when you're a <b>lower rank</b> than your opponent you take <b>5% less damage per rank</b> you're below them (up to 50% less). It only ever helps the underdog, and a 🛡 badge shows by both names so the other player knows.</p>
+
+          <h4>King's taunt</h4>
+          <p>Reach the top rank (<b>King</b>) and a cheeky <b>😈 Taunt</b> button appears during a bout — fling a bit of friendly trash‑talk at your opponent.</p>
 
           <h4>2‑player</h4>
-          <p>One phone <b>Hosts</b> and shows a code; the other <b>Joins</b> with it. Both phones must be on the <b>same Wi‑Fi</b>. The Host picks the difficulty for both.</p>
+          <p>In <b>Controls → 2 Players</b>, choose how to connect:</p>
+          <p>• <b>Nearby (offline)</b> — duel someone <b>in the same room with no internet</b> (great on a plane). One phone <b>Hosts</b>, the other taps <b>Join</b> and finds it automatically. Needs Bluetooth, Wi‑Fi and Location switched on.<br>
+          • <b>Online (internet)</b> — duel a friend <b>anywhere</b>. The Host shows a <b>4‑letter code</b>; the other types it in. Both need internet.</p>
         </div>
         <button id="howClose" style="width:100%;margin-top:10px">Got it</button>
       </div>
@@ -653,13 +666,30 @@
   function armConnectTimeout(){
     clearTimeout(net.timer);
     net.timer=setTimeout(()=>{ if(!net.connected){
-      netStat('no luck — put BOTH phones on the SAME Wi‑Fi, then retry','no');
+      netStat(useNearby()? 'no nearby player found — check both phones have Bluetooth, Wi‑Fi & Location on, then retry'
+                         : 'no luck — put BOTH phones on the SAME Wi‑Fi (or internet), then retry','no');
       setPill('', 'no link');
-    } }, 20000);
+    } }, 40000);
   }
   // ---- transport: WebRTC/PeerJS for the online web build; native Nearby Connections when wrapped for Android ----
   function nbPlugin(){ return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NearbyDuel) || window.NearbyDuel || null; }
   function isNative(){ return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && nbPlugin()); }
+  // which pipe a 2-player match uses. 'nearby' = offline Bluetooth/Wi-Fi Direct (Android app only); 'online' = internet + 4-letter code.
+  let netMode = isNative() ? 'nearby' : 'online';
+  function useNearby(){ return netMode==='nearby' && isNative(); }
+  // keep the screen awake during play/lobby (Wake Lock API — works in the Android WebView, no native plugin)
+  let _wakeLock=null, _awakeWant=false;
+  async function keepAwake(on){
+    try{
+      if(typeof navigator==='undefined' || !('wakeLock' in navigator)) return;
+      if(on){ if(_wakeLock) return; _wakeLock=await navigator.wakeLock.request('screen');
+        if(_wakeLock && _wakeLock.addEventListener) _wakeLock.addEventListener('release',()=>{ _wakeLock=null; }); }
+      else { const w=_wakeLock; _wakeLock=null; if(w){ try{ await w.release(); }catch(e){} } }
+    }catch(e){ _wakeLock=null; }
+  }
+  if(typeof document!=='undefined' && document.addEventListener){
+    document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible' && _awakeWant) keepAwake(true); });
+  }
   let _nbWired=false;
   function nbWire(){
     if(_nbWired) return; const NB=nbPlugin(); if(!NB) return; _nbWired=true;
@@ -684,7 +714,7 @@
   }
   function hostGame(){
     setPill('connecting','hosting…'); armConnectTimeout();
-    if(isNative()){ net.role='host'; nbWire();
+    if(useNearby()){ net.role='host'; nbWire();
       Promise.resolve(nbPlugin().host({name:myHandle()})).catch(e=>netStat('error: '+(e&&e.message||e),'no'));
       showCode('NEARBY'); netStat('waiting for a nearby player to join…'); return; }
     loadPeerJS(()=>{
@@ -697,7 +727,7 @@
   }
   function joinGame(code){
     setPill('connecting','connecting…'); armConnectTimeout();
-    if(isNative()){ net.role='join'; nbWire();
+    if(useNearby()){ net.role='join'; nbWire();
       Promise.resolve(nbPlugin().join({name:myHandle()})).catch(e=>netStat('error: '+(e&&e.message||e),'no'));
       netStat('searching for a nearby host…'); return; }
     loadPeerJS(()=>{
@@ -716,7 +746,7 @@
     net.conn.on('close',()=>{ markDisconnected('player disconnected'); });
   }
   function netSend(obj){
-    if(isNative()){ try{ nbPlugin().send({data:JSON.stringify(obj)}); }catch(e){} return; }
+    if(useNearby()){ try{ nbPlugin().send({data:JSON.stringify(obj)}); }catch(e){} return; }
     try{ if(net.conn&&net.conn.open) net.conn.send(JSON.stringify(obj)); }catch(e){}
   }
   function netUIDisconnected(){
@@ -726,7 +756,7 @@
   }
   function leaveNet(){
     clearTimeout(net.timer);
-    try{ if(isNative()) nbPlugin().stop(); }catch(e){}
+    try{ if(useNearby()) nbPlugin().stop(); }catch(e){}
     try{ if(net.conn) net.conn.close(); }catch(e){}
     try{ if(net.peer) net.peer.destroy(); }catch(e){}
     net.conn=null; net.peer=null; net.connected=false; net._ready=false; net.onPacket=null;
@@ -773,7 +803,7 @@
     if(net.seed==null||!net.oppName||net._ready) return;
     net._ready=true; clearTimeout(net.timer); net.lastSeen=performance.now();
     netStat('connected to '+net.oppName+'  ·  sync '+(net.seed%10000),'ok');
-    setPill('live','● '+net.oppName);
+    setPill('live',(useNearby()?'Nearby':'Online')+' · '+net.oppName);
     { const db=document.getElementById('disconnectBtn'); if(db) db.style.display='block'; }
     audioUnlock(); sfxConnect();
     foeSwayPhase = (net.seed % 6283) / 1000;
@@ -940,9 +970,10 @@
     const fp=foePos(time);                          // where the foe actually is on arrival
     const power=lastSwing.power, dir=lastSwing.dir;
     const miss=Math.abs(lastSwing.aimPoint.x - fp.x);
-    const hitWin=r*1.5;                             // a touch more forgiving, since the target now moves in flight
-    const aimScore=Math.max(0,1-miss/hitWin);
-    const connect=aimScore>0;
+    const reach=r*2;                                // the shells overlap (and so a hit counts) within the sum of the two radii
+    const connect=miss<reach;                       // any visible contact registers — judged here, at the moment of impact
+    const prox=connect?Math.max(0,1-miss/reach):0;  // 1 dead‑centre → 0 at the very edge of contact
+    const aimScore=connect?(0.05+0.95*prox):0;      // distance falloff: a graze at the edge = 5% of a clean hit, ramping smoothly to 100% at centre
     const exposure=foeExposure(time);              // timing — is the scar facing you as it lands?
 
     const packet={power:+power.toFixed(3),angle:+dir.toFixed(3),exposure:+exposure.toFixed(3),seed:(Math.random()*1e6)|0};
@@ -1710,8 +1741,8 @@
     document.getElementById('foeHp').style.width=(foe.hp/foe.max*100)+'%';
     const yBadge = handicapOn ? ' <span class="hcap">🛡 HANDICAP</span>' : '';
     const fBadge = (opponent==='online' && net.oppHandicap) ? ' <span class="hcap">🛡 HANDICAP</span>' : '';
-    document.getElementById('youSixer').innerHTML=`${TIERS[tierOf(you.score)].name} · ${Math.max(0,Math.round(you.hp))}/${you.max} life${yBadge}`;
-    document.getElementById('foeSixer').innerHTML=`${TIERS[tierOf(foe.score)].name} · ${Math.max(0,Math.round(foe.hp))}/${foe.max} life${fBadge}`;
+    document.getElementById('youSixer').innerHTML=`${TIERS[tierOf(you.score)].name} · ${Math.max(0,Math.round(you.hp))}/${you.max}${yBadge}`;
+    document.getElementById('foeSixer').innerHTML=`${TIERS[tierOf(foe.score)].name} · ${Math.max(0,Math.round(foe.hp))}/${foe.max}${fBadge}`;
     if(typeof updateRudeBtn==='function') updateRudeBtn();
   }
   function setStats(){ /* bottom stat boxes removed — combat numbers now float on the conkers */ }
@@ -2177,6 +2208,7 @@
   function frame(time){
     requestAnimationFrame(frame);
     if(!state){return;}
+    { const want=(state!==ST.OVER); if(want!==_awakeWant){ _awakeWant=want; keepAwake(want); } }  // awake during play/lobby, release on the results screen
     updateRudeBtn();
     ctx.clearRect(0,0,W,H);
     drawScene(time);
@@ -2355,7 +2387,9 @@
         ctx.save();ctx.globalAlpha=Math.max(0,Math.min(1,a));
         ctx.textAlign='center';
         ctx.fillStyle=banner.color || (banner.text==='BRACE!'?'#7bd389':'#ffd27a');
-        ctx.font='800 38px "Iowan Old Style",Georgia,serif';
+        let bsz=38; ctx.font='800 '+bsz+'px "Iowan Old Style",Georgia,serif';
+        const bm=ctx.measureText?ctx.measureText(banner.text):null, bw=(bm&&bm.width)||0, bmax=W*0.9;
+        if(bw>bmax){ bsz=Math.max(15, Math.floor(bsz*bmax/bw)); ctx.font='800 '+bsz+'px "Iowan Old Style",Georgia,serif'; }
         ctx.fillText(banner.text,W/2,H*0.34);
         ctx.restore();ctx.textAlign='left';
       }
@@ -2482,10 +2516,9 @@
     const online=opponent==='online';
     document.getElementById('lobby').style.display=online?'block':'none';
     document.getElementById('oppNote').textContent=online
-      ? (isNative()
-          ? 'Duel a friend nearby — no internet needed. One phone Hosts, the other taps Join to find it.'
-          : 'Connect a second phone to duel a friend. One phone Hosts, the other Joins.')
+      ? 'Duel a friend — pick how you connect below.'
       : 'Practice against the computer — play offline, anytime.';
+    if(online) refreshLobbyMode();
     // tear down any live link when leaving online (or re-entering), then start a clean match
     leaveNet();
     const pill=document.getElementById('netPill');
@@ -2501,13 +2534,33 @@
     newMatch(false);
     coach('Disconnected. <b>Host</b> or <b>Join</b> to start a new duel, or switch to <b>Bot</b>.');
   });
+  function refreshLobbyMode(){
+    const nativeOK=isNative();
+    if(!nativeOK) netMode='online';                 // Nearby only exists inside the Android app
+    const nb=document.getElementById('modeNearby'), on=document.getElementById('modeOnline'), note=document.getElementById('modeNote');
+    if(nb){ nb.classList.toggle('on', netMode==='nearby'); nb.disabled=!nativeOK; nb.style.opacity=nativeOK?'1':'.4'; }
+    if(on){ on.classList.toggle('on', netMode==='online'); }
+    if(note){ note.innerHTML = (netMode==='nearby')
+      ? 'Plays a friend <b>in the same room</b> — no internet. Host, then the other taps Join to find you.'
+      : (nativeOK ? 'Plays a friend <b>anywhere</b> over the internet. Host shows a 4‑letter code; the other types it in.'
+                  : 'Plays a friend <b>anywhere</b> over the internet. Host shows a 4‑letter code; the other types it in. <i>(Nearby offline needs the Android app.)</i>'); }
+    // reset the host/join sub-panels when the mode flips
+    document.getElementById('joinRow').style.display='none';
+    document.getElementById('codeShow').style.display='none';
+  }
+  document.querySelectorAll('#modeSeg button').forEach(b=>b.addEventListener('click',()=>{
+    if(b.disabled) return;
+    if(netActive()) leaveNet();                     // switching pipe drops any half-open link
+    netMode=b.dataset.mode; refreshLobbyMode();
+    setPill('','offline'); netStat('not connected','no');
+  }));
   document.getElementById('hostBtn').addEventListener('click',()=>{
     audioUnlock(); document.getElementById('joinRow').style.display='none'; hostGame();
   });
   document.getElementById('joinBtn').addEventListener('click',()=>{
     audioUnlock();
     document.getElementById('codeShow').style.display='none';
-    if(isNative()){ document.getElementById('joinRow').style.display='none'; joinGame(); return; }  // Nearby auto-discovers — no code needed
+    if(useNearby()){ document.getElementById('joinRow').style.display='none'; joinGame(); return; }  // Nearby auto-discovers — no code needed
     document.getElementById('joinRow').style.display='block';
   });
   document.getElementById('connectBtn').addEventListener('click',()=>{
