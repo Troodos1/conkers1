@@ -291,7 +291,7 @@
 
   // ---------- game state ----------
   const ST = {AIM:'aim',STRIKE:'strike',FOEWIND:'foewind',FOE:'foe',OVER:'over',NETWAIT:'netwait'};
-  let state, you, foe, charging, pull, aimPhase, foeAnim, fx, shake, t0, lastSwing, chargeStart, aimBase, aimTarget, pressStart, brace, braceFlash=0, flash=0, banner=null, foeWind=null, roundLog=null, floats=[], twitch=null, pows=[], chunks=[], shattered=null, victory=null;
+  let state, you, foe, charging, pull, aimPhase, foeAnim, fx, shake, t0, lastSwing, chargeStart, aimBase, aimTarget, pressStart, brace, braceFlash=0, flash=0, banner=null, foeWind=null, roundLog=null, floats=[], twitch=null, foeTwitch=null, pows=[], chunks=[], shattered=null, victory=null;
   // ---- control scheme / motion sensors ----
   let controlMode='touch', motionOn=false, useGyro=false, motionSens=1, swingCd=0;
   const sensors={accel:false, gyro:false, orient:false};
@@ -340,7 +340,7 @@
     foe.name = FOES[Math.floor(Math.random()*FOES.length)];
     document.getElementById('foeName').textContent = foe.name;
     charging=false; pull={x:0,y:0,len:0}; aimPhase=Math.random()*Math.PI*2;
-    foeAnim=null; fx=[]; shake=0; lastSwing=null; brace=null; braceFlash=0; flash=0; banner=null; foeWind=null; roundLog=null; floats=[]; twitch=null; pows=[]; chunks=[]; shattered=null; victory=null;
+    foeAnim=null; fx=[]; shake=0; lastSwing=null; brace=null; braceFlash=0; flash=0; banner=null; foeWind=null; roundLog=null; floats=[]; twitch=null; foeTwitch=null; pows=[]; chunks=[]; shattered=null; victory=null;
     document.getElementById('toast').classList.remove('show');
     state=ST.AIM;
     over.classList.remove('show');
@@ -533,8 +533,8 @@
   let opponent='bot';                       // 'bot' | 'online'
   const net={ peer:null, conn:null, role:null, connected:false, code:null, seed:null, oppName:null, onPacket:null, timer:null, lastSeen:0 };
   let gameDiff='medium';                             // medium = current speed
-  // difficulty changes how fast the TARGET conker sways. Per design: a slower target is harder to time.
-  const SWAY={ easy:1.5, medium:1.0, hard:0.58 };    // easy = quick sway, hard = slow sway
+  // difficulty changes how fast the TARGET conker sways. Faster target = harder to lead/time.
+  const SWAY={ easy:0.6, medium:1.0, hard:1.65 };    // easy = slow sway (easiest), hard = quick sway (hardest)
   function swayMult(){ return SWAY[gameDiff]||1; }
   const ICE={ iceServers:[
     {urls:'stun:stun.l.google.com:19302'},
@@ -612,6 +612,7 @@
     document.getElementById('codeShow').style.display='none';
     document.getElementById('joinRow').style.display='none';
     netStat('not connected','no');
+    if(typeof syncDiffUI==='function') syncDiffUI();
   }
   function markDisconnected(reason){
     if(!net.connected && !net._ready) return;
@@ -636,6 +637,7 @@
       if(net.role==='host' && net.seed!=null) netSend({t:'seed',seed:net.seed,diff:gameDiff});
       onConnectedReady();
     } else if(m.t==='seed'){ net.seed=m.seed; if(m.diff&&SWAY[m.diff]){gameDiff=m.diff;syncDiffUI();} onConnectedReady(); }
+    else if(m.t==='diff'){ if(SWAY[m.diff]){ gameDiff=m.diff; syncDiffUI(); banner={text:'DIFFICULTY: '+m.diff.toUpperCase(),t:performance.now(),life:1300,color:'#f2c879'}; } }
     else if(net.onPacket){ net.onPacket(m); }
   }
   function onConnectedReady(){
@@ -661,6 +663,8 @@
     foeAnim=null; charging=false; pull={x:0,y:0,len:0}; brace=null; foeWind=null; floats=[]; pows=[]; chunks=[]; shattered=null; victory=null;
     syncHud();
     net.iAttack = (net.role==='host');     // host strikes first
+    if(net.role==='host') netSend({t:'diff',diff:gameDiff});   // make sure both phones agree at kickoff
+    syncDiffUI();
     banner={text:'CONNECTED', t:performance.now(), life:1500, color:'#5fd36a'};
     setTimeout(netSetTurn, 900);
   }
@@ -673,7 +677,7 @@
   }
   function netSetTurn(){
     if(!netActive()) return;
-    foeAnim=null; charging=false; pull={x:0,y:0,len:0}; net.sentWind=false; net.flinched=false;
+    foeAnim=null; charging=false; pull={x:0,y:0,len:0}; net.sentWind=false; net.flinched=false; net.flinchedVoid=false;
     if(net.iAttack){ state=ST.AIM; banner={text:'YOUR TURN', t:performance.now(), life:1100, color:'#f2c879'};
       setTurnTag('you','● Your turn — strike');
       coach('<b>Your turn</b> — aim and strike '+net.oppName+'.'); }
@@ -684,10 +688,11 @@
   function handleGamePacket(m){
     if(!netActive()) return;
     net.lastSeen=performance.now();
-    if(m.t==='windup' && !net.iAttack){ netIncomingWind(); }
+    if(m.t==='windup' && !net.iAttack){ net.flinchedVoid=false; netIncomingWind(); }
     else if(m.t==='windcancel' && !net.iAttack){ netSetTurn(); }
-    else if(m.t==='swing' && !net.iAttack){ netIncomingSwing(m); }
-    else if(m.t==='miss' && !net.iAttack){ netIncomingMiss(m); }
+    else if(m.t==='swing' && !net.iAttack){ if(net.flinchedVoid){ net.flinchedVoid=false; return; } netIncomingSwing(m); }
+    else if(m.t==='miss' && !net.iAttack){ if(net.flinchedVoid){ net.flinchedVoid=false; return; } netIncomingMiss(m); }
+    else if(m.t==='flinch' && net.iAttack){ netOpponentFlinched(); }
     else if(m.t==='brace' && net.iAttack){ netApplyBrace(m); }
     else if(m.t==='rematch'){ startNetMatch(); }
     else if(m.t==='ping'){ /* keep-alive only */ }
@@ -701,13 +706,27 @@
   }
   function netFlinch(){
     if(net.flinched) return;
-    net.flinched=true; sfxBoo();
+    net.flinched=true; net.flinchedVoid=true; sfxBoo();
     const r=Math.min(W,H)*0.085, a=anchors();
-    twitch={t0:performance.now()}; shake=8;
-    spawnFloat(a.you.x, a.you.y-r*1.4, 'TOO EARLY!', '#ff6a4a', 15);
-    toast('You flinched — braced too early!');
-    banner={text:'FLINCH!', t:performance.now(), life:1200, color:'#ff8a5a'};
-    coach('<b>Too early!</b> You braced before the swing — no block on this one. Wait for it next time.');
+    twitch={t0:performance.now()}; shake=11;
+    spawnFloat(a.you.x, a.you.y-r*1.4, 'FLINCH!', '#ff6a4a', 16);
+    toast('You flinched — false start! They strike again.');
+    banner={text:'YOU FLINCHED', t:performance.now(), life:1500, color:'#ff8a5a'};
+    netSend({t:'flinch'});
+    foeWind=null; brace=null; foeAnim=null;
+    state=ST.NETWAIT; setTurnTag('wait','○ '+net.oppName+' strikes again');
+    coach('<b>Too early!</b> Your flinch <b>voids their strike</b> — they get another go. Wait for the swing next time.');
+  }
+  // my opponent flinched while I was winding up — my strike doesn't count, I go again
+  function netOpponentFlinched(){
+    charging=false; pull={x:0,y:0,len:0}; net.sentWind=false; foeAnim=null; brace=null;
+    const r=Math.min(W,H)*0.085, a=anchors();
+    foeTwitch={t0:performance.now()}; shake=11; sfxBoo();
+    spawnFloat(a.foe.x, a.foe.y-r*1.4, 'THEY FLINCHED', '#ffce7a', 14);
+    toast(`<b>${net.oppName}</b> flinched — your strike doesn’t count. Strike again!`);
+    banner={text:net.oppName.toUpperCase()+' FLINCHED', t:performance.now(), life:1600, color:'#ffce7a'};
+    net.iAttack=true; state=ST.AIM; setTurnTag('you','● Free re‑strike!');
+    coach(`<b>${net.oppName} flinched!</b> Free re‑strike — aim and let it fly.`);
   }
   // opponent swung and missed — show it sail past, then it's my turn
   function netIncomingMiss(m){
@@ -915,9 +934,6 @@
     const a=anchors(), time=performance.now();
     const dur=(700-power*180);                       // incoming swing speed is constant (brace timing unchanged)
     brace={armed:true,used:false,impactAt:time+dur*0.5,dur,result:null,mit:1};
-    if(isNet && net.flinched){                        // braced too early during the wind-up — no block this swing
-      brace.used=true; brace.mit=1; brace.result='miss';
-    }
     roundLog.f={power,acc:aimScore,crit};
     foeAnim={kind:'foe',start:{...foePos(time)},tgt:{x:a.you.x,y:a.you.y},t0:time,dur,fired:false,
       onImpact:()=>{
@@ -941,10 +957,8 @@
         if(you.hp<=0){return killConker('you');}
         setTimeout(()=>{ if(state===ST.FOE){ state=ST.AIM; coach("Your turn — <b>wind up</b> and let it fly."); } }, 750);
       }};
-    coach(isNet && net.flinched
-      ? `<b>${foe.name}</b> swings — you flinched, no brace!`
-      : `<b>${foe.name}</b> swings — <b>tap to brace!</b>`);
-    if(isNet) setTurnTag('incoming', net.flinched?'⚠ flinched — bracing lost':'⚠ BRACE NOW!');
+    coach(`<b>${foe.name}</b> swings — <b>tap to brace!</b>`);
+    if(isNet) setTurnTag('incoming','⚠ BRACE NOW!');
     banner={text:'BRACE!', t:performance.now(), life:1200};
   }
 
@@ -1073,20 +1087,23 @@
     setTimeout(()=> startVictory(whoLost==='foe'), 1050); // pieces fly, then the winner gloats
   }
   const TAUNT_BY_TIER=['dance','raspberry','fistpump','bow','flex','moon'];
+  const TAUNT_POOL=['dance','raspberry','fistpump','bow','flex','moon','pee'];
   function pickTaunt(tier){
-    if(Math.random()<0.6) return TAUNT_BY_TIER[Math.min(tier|0, TAUNT_BY_TIER.length-1)];
-    return TAUNT_BY_TIER[(Math.random()*TAUNT_BY_TIER.length)|0];
+    if(Math.random()<0.5) return TAUNT_BY_TIER[Math.min(tier|0, TAUNT_BY_TIER.length-1)];
+    return TAUNT_POOL[(Math.random()*TAUNT_POOL.length)|0];
   }
   function startVictory(won){
     if(victory) return;
     const winTier = won ? tierOf(you.score) : tierOf(foe.score);
     const taunt = pickTaunt(winTier);
-    const fireworks = winTier>=3 || taunt==='moon' || taunt==='fistpump' || Math.random()<0.35;
-    victory={ who: won?'you':'foe', tier:winTier, taunt, t0:performance.now(), dur:3000, fireworks, fwNext:0, fw:[] };
+    const fireworks = (taunt!=='pee') && (winTier>=3 || taunt==='moon' || taunt==='fistpump' || Math.random()<0.35);
+    const dur = taunt==='pee' ? 3600 : 3000;
+    victory={ who: won?'you':'foe', tier:winTier, taunt, t0:performance.now(), dur, fireworks, fwNext:0, fw:[],
+              loserAt:{x:W*0.5, y:H*0.82} };
     state='celebrate'; if(typeof setTurnTag==='function') setTurnTag(null);
     banner={text: won?'YOU WIN!':(foe.name.toUpperCase()+' WINS'), t:performance.now(), life:1500, color: won?'#ffd76a':'#ff8a5a'};
     if(won) sfxConnect();
-    const tline={dance:'does a little victory jig!',raspberry:'blows a big raspberry!',fistpump:'fist‑pumps the air!',bow:'takes a theatrical bow.',flex:'flexes for the crowd!',moon:'turns and moons you!'}[taunt];
+    const tline={dance:'does a little victory jig!',raspberry:'blows a big raspberry!',fistpump:'fist‑pumps the air!',bow:'takes a theatrical bow.',flex:'flexes for the crowd!',moon:'turns and moons you!',pee:'relieves itself on the loser!'}[taunt];
     coach((won?'<b>Winner!</b> Your conker ':('<b>'+foe.name+'</b> '))+tline);
     setTimeout(()=> endMatch(won), victory.dur);
   }
@@ -1165,9 +1182,68 @@
     }
     ctx.globalAlpha=1;
   }
+  function drawPeeScene(v,time){
+    const r=Math.min(W,H)*0.085, T=TIERS[v.tier||0], limbCol='#5a3318';
+    const tt=Math.max(0,(time-v.t0)/1000);
+    const cx=W*0.5, cy=H*0.5;                          // victor stands centre-stage
+    const tgt=v.loserAt;                                // the fallen conker on the ground
+    // ---- the defeated conker, slumped on the ground ----
+    ctx.save(); ctx.translate(tgt.x,tgt.y);
+    ctx.fillStyle='rgba(0,0,0,.22)'; ctx.beginPath(); ctx.ellipse(0,r*0.5,r*1.1,r*0.32,0,0,7); ctx.fill(); // shadow
+    ctx.save(); ctx.rotate(0.35); ctx.scale(1,0.82);    // tipped over, squashed
+    const dull='#5a4631';
+    ctx.fillStyle=dull; ctx.beginPath(); ctx.ellipse(0,0,r*0.92,r*0.86,0,0,7); ctx.fill();
+    ctx.strokeStyle='rgba(20,10,4,.55)'; ctx.lineWidth=2;
+    for(let i=0;i<3;i++){ ctx.beginPath(); ctx.moveTo(-r*0.5+i*r*0.4,-r*0.6); ctx.lineTo(-r*0.3+i*r*0.4,r*0.6); ctx.stroke(); } // cracks
+    // x_x eyes
+    ctx.strokeStyle='#241206'; ctx.lineWidth=r*0.06; ctx.lineCap='round';
+    [[-r*0.3,-r*0.05],[r*0.18,-r*0.05]].forEach(([ex,ey])=>{ ctx.beginPath();
+      ctx.moveTo(ex-r*0.1,ey-r*0.1); ctx.lineTo(ex+r*0.1,ey+r*0.1);
+      ctx.moveTo(ex+r*0.1,ey-r*0.1); ctx.lineTo(ex-r*0.1,ey+r*0.1); ctx.stroke(); });
+    ctx.restore(); ctx.restore();
+    // ---- growing puddle ----
+    const grow=Math.min(1,tt/2.2);
+    ctx.fillStyle='rgba(232,206,80,.45)';
+    ctx.beginPath(); ctx.ellipse(tgt.x, tgt.y+r*0.55, r*(0.5+grow*1.1), r*(0.18+grow*0.4), 0,0,7); ctx.fill();
+    ctx.fillStyle='rgba(245,224,120,.55)';
+    ctx.beginPath(); ctx.ellipse(tgt.x, tgt.y+r*0.55, r*(0.3+grow*0.7), r*(0.1+grow*0.24), 0,0,7); ctx.fill();
+    // ---- the victor (with limbs), leaning back, hips forward ----
+    const by=cy, bx=cx, rot=-0.12+Math.sin(tt*3)*0.03;
+    const src={x:bx, y:by+r*0.55};                      // stream origin (front-bottom)
+    ctx.save(); ctx.translate(bx,by); ctx.rotate(rot); ctx.translate(-bx,-by);
+    // legs astride
+    vLimb(bx-r*0.3,by+r*0.7,bx-r*0.55,by+r*1.2,r*0.16,limbCol); vBlob(bx-r*0.55,by+r*1.24,r*0.13,'#3f2410');
+    vLimb(bx+r*0.3,by+r*0.7,bx+r*0.55,by+r*1.2,r*0.16,limbCol); vBlob(bx+r*0.55,by+r*1.24,r*0.13,'#3f2410');
+    drawConker(bx,by,r,1,1,1.0,v.tier,0);
+    // smug face
+    ctx.save(); ctx.translate(bx,by);
+    ctx.strokeStyle='#241206'; ctx.lineWidth=r*0.07; ctx.lineCap='round';
+    ctx.beginPath(); ctx.arc(-r*0.27,-r*0.14,r*0.12,Math.PI*1.05,Math.PI*1.95);
+                     ctx.arc(r*0.27,-r*0.14,r*0.12,Math.PI*1.05,Math.PI*1.95); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0,r*0.1,r*0.2,0.1*Math.PI,0.6*Math.PI); ctx.stroke(); // smirk
+    ctx.restore();
+    // hands resting low at the hips (holding stance)
+    vLimb(bx-r*0.6,by,bx-r*0.18,by+r*0.5,r*0.15,limbCol); vBlob(bx-r*0.18,by+r*0.5,r*0.15,'#3f2410');
+    vLimb(bx+r*0.6,by,bx+r*0.18,by+r*0.5,r*0.15,limbCol); vBlob(bx+r*0.18,by+r*0.5,r*0.15,'#3f2410');
+    ctx.restore();
+    // ---- the stream: droplets along an arc from src to the puddle ----
+    if(tt>0.35){
+      const land={x:tgt.x, y:tgt.y+r*0.5};
+      const peak=Math.min(src.y,land.y)-r*0.7;
+      for(let i=0;i<14;i++){
+        const s=((time*0.0016 + i/14)%1);
+        const x=src.x+(land.x-src.x)*s;
+        const y=(1-s)*(1-s)*src.y + 2*(1-s)*s*peak + s*s*land.y;  // quadratic bezier arc
+        const rr=r*(0.07-0.02*s);
+        ctx.fillStyle=`rgba(245,224,90,${0.85-0.3*s})`;
+        ctx.beginPath(); ctx.arc(x,y,rr,0,7); ctx.fill();
+      }
+    }
+  }
   function drawVictor(time){
     const v=victory; if(!v) return;
     if(v.fireworks) drawFireworks(v,time);
+    if(v.taunt==='pee'){ drawPeeScene(v,time); return; }
     const a=anchors(), r=Math.min(W,H)*0.085;
     const base = v.who==='you'? a.you : a.foe;
     const tt=Math.max(0,(time-v.t0)/1000);
@@ -1509,6 +1585,11 @@
       if(!foeAnim.fired&&p>=0.5){foeAnim.fired=true;foeAnim.onImpact();}
       if(p>=1)foeAnim=null;
     }
+    if(foeTwitch){
+      const tage=time-foeTwitch.t0;
+      if(tage>360) foeTwitch=null;
+      else { const amp=10*(1-tage/360); fpos={x:fpos.x+Math.sin(tage*0.09)*amp, y:fpos.y+Math.cos(tage*0.12)*amp*0.5}; }
+    }
     drawString(a.foe.x, a.foe.y-r*1.8, fpos.x, fpos.y);
     const exposingNow = state===ST.AIM && charging;
     if(!(shattered&&shattered.who==='foe') && !(victory&&victory.who==='foe'))
@@ -1523,7 +1604,16 @@
     }
 
     // foe wind-up telegraph: a charging bar shows how much power the swing is loading
-    if(state===ST.FOEWIND && foeWind){
+    if(state===ST.FOEWIND && foeWind && foeWind.net){
+      // net telegraph: we don't know the power yet, so show a pulsing "incoming" warning ring
+      const pulse=0.55+0.45*Math.sin(time*0.012);
+      ctx.save();
+      ctx.strokeStyle=`rgba(255,106,74,${0.4+0.4*pulse})`; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.arc(fpos.x,fpos.y,r+10+pulse*6,0,7); ctx.stroke();
+      ctx.fillStyle=`rgba(255,170,120,${0.7+0.3*pulse})`; ctx.font='800 11px system-ui,sans-serif'; ctx.textAlign='center';
+      ctx.fillText('⚠ WINDING UP — WAIT', fpos.x, fpos.y - r*1.9); ctx.textAlign='left';
+      ctx.restore();
+    } else if(state===ST.FOEWIND && foeWind){
       const el=time-foeWind.t0, filling=el<foeWind.fillDur;
       const lvl = filling ? (el/foeWind.fillDur)*foeWind.power : foeWind.power;
       const bw=r*4, bh=10, bx=a.foe.x-bw/2, by=fpos.y - r*2.1;
@@ -1745,12 +1835,24 @@
 
   document.getElementById('nameInput').addEventListener('input',function(){ net._name=this.value; });
   document.querySelectorAll('#segDiff button').forEach(b=>b.addEventListener('click',()=>{
+    if(netActive() && net.role!=='host'){                 // only the host controls difficulty in a live game
+      banner={text:'HOST SETS DIFFICULTY',t:performance.now(),life:1300,color:'#f2a03d'};
+      coach('In a 2‑player game, the <b>Host</b> chooses difficulty for both. Yours will follow theirs.');
+      syncDiffUI(); return;
+    }
     gameDiff=b.dataset.diff;
     document.querySelectorAll('#segDiff button').forEach(x=>x.classList.toggle('on',x===b));
-    // host can change it live and push to the joined player
-    if(netActive() && net.role==='host'){ netSend({t:'seed',seed:net.seed,diff:gameDiff}); }
+    if(netActive() && net.role==='host'){ netSend({t:'diff',diff:gameDiff}); }  // push to the other phone
   }));
-  function syncDiffUI(){ document.querySelectorAll('#segDiff button').forEach(x=>x.classList.toggle('on',x.dataset.diff===gameDiff)); }
+  function syncDiffUI(){
+    document.querySelectorAll('#segDiff button').forEach(x=>x.classList.toggle('on',x.dataset.diff===gameDiff));
+    const joinerLocked = netActive() && net.role!=='host';
+    document.querySelectorAll('#segDiff button').forEach(x=>{ x.style.opacity=joinerLocked?'.45':'1'; });
+    const dn=document.getElementById('diffNote');
+    if(dn) dn.innerHTML = joinerLocked
+      ? 'Difficulty is set by the <b>Host</b> in a 2‑player game — currently <b>'+gameDiff+'</b>.'
+      : 'Changes how fast the <b>target</b> conker sways. A faster target is harder to time, so <b>Hard = quick sway</b>, Easy = slow. In 2‑player the Host’s choice syncs to both.';
+  }
 
   // ---------- boot ----------
   resize();
