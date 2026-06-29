@@ -358,6 +358,10 @@
     if(gap<=0) return 1;
     return Math.max(0.5, 1 - 0.05*gap);
   }
+  // ---- persistent rank: survives app restarts (localStorage on the web build; the native app keeps it too) ----
+  const RANK_KEY='conkersduel.rank.v1';
+  function loadRank(){ try{ if(typeof localStorage==='undefined') return 0; const v=parseInt(localStorage.getItem(RANK_KEY),10); return isNaN(v)?0:Math.max(0,Math.min(TIER_SCORE[6],v)); }catch(e){ return 0; } }
+  function saveRank(){ try{ if(typeof localStorage==='undefined'||!you) return; localStorage.setItem(RANK_KEY, String(you.score|0)); }catch(e){} }
   // best-of series state
   let seriesLen=1;                            // 1 = single game, 3 or 5 = best-of
   function seriesNeed(){ return Math.ceil(seriesLen/2); }   // wins needed: 1 / 2 / 3
@@ -420,7 +424,8 @@
   function freshConker(score){const m=maxHpFor(score);return {hp:m,max:m,score:score};}
 
   function newMatch(keepYou){
-    you = keepYou ? you : freshConker(0);
+    const keptRank = you ? you.score : loadRank();   // earned rank persists across matches AND app restarts
+    you = keepYou ? you : freshConker(keptRank);
     you.max = maxHpFor(you.score); you.hp = you.max;       // carry rank's bonus life, heal up
     const fs = Math.max(1, you.score + (Math.floor(Math.random()*3)-1)); // foe tracks your rank (±1)
     foe = freshConker(fs);
@@ -652,6 +657,22 @@
       setPill('', 'no link');
     } }, 20000);
   }
+  // ---- transport: WebRTC/PeerJS for the online web build; native Nearby Connections when wrapped for Android ----
+  function nbPlugin(){ return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NearbyDuel) || window.NearbyDuel || null; }
+  function isNative(){ return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && nbPlugin()); }
+  let _nbWired=false;
+  function nbWire(){
+    if(_nbWired) return; const NB=nbPlugin(); if(!NB) return; _nbWired=true;
+    NB.addListener('status', e=>{ if(e&&e.text) netStat(e.text); });
+    NB.addListener('connected', e=>{ net.connected=true; net.lastSeen=performance.now(); if(e&&e.name) net.oppName=e.name; sendHello(); });
+    NB.addListener('data', e=>{ let m; try{ m=JSON.parse(e.data); }catch(_){ return; } net.lastSeen=performance.now(); handlePacket(m); });
+    NB.addListener('disconnected', e=>{ markDisconnected((e&&e.reason)||'player disconnected'); });
+  }
+  function sendHello(){       // first packet once a link opens — same handshake for both transports
+    const myRank=tierOf(you.score);
+    if(net.role==='host'){ net.seed=(Math.random()*1e9)|0; netSend({t:'hello',name:myHandle(),seed:net.seed,diff:gameDiff,fmt:seriesLen,rank:myRank,handi:handicapOn}); }
+    else { netSend({t:'hello',name:myHandle(),rank:myRank,handi:handicapOn}); }
+  }
   function loadPeerJS(cb){
     if(window.Peer){ cb(); return; }
     netStat('loading connection library…');
@@ -663,6 +684,9 @@
   }
   function hostGame(){
     setPill('connecting','hosting…'); armConnectTimeout();
+    if(isNative()){ net.role='host'; nbWire();
+      Promise.resolve(nbPlugin().host({name:myHandle()})).catch(e=>netStat('error: '+(e&&e.message||e),'no'));
+      showCode('NEARBY'); netStat('waiting for a nearby player to join…'); return; }
     loadPeerJS(()=>{
       net.role='host'; net.code=randCode();
       try{ net.peer=new Peer('conkersduel-'+net.code,{config:ICE}); }catch(e){ netStat('error: '+e.message,'no'); return; }
@@ -673,6 +697,9 @@
   }
   function joinGame(code){
     setPill('connecting','connecting…'); armConnectTimeout();
+    if(isNative()){ net.role='join'; nbWire();
+      Promise.resolve(nbPlugin().join({name:myHandle()})).catch(e=>netStat('error: '+(e&&e.message||e),'no'));
+      netStat('searching for a nearby host…'); return; }
     loadPeerJS(()=>{
       net.role='join';
       try{ net.peer=new Peer(undefined,{config:ICE}); }catch(e){ netStat('error: '+e.message,'no'); return; }
@@ -683,14 +710,15 @@
   function wireConn(){
     net.conn.on('open',()=>{
       net.connected=true; net.lastSeen=performance.now();
-      const myRank=tierOf(you.score);
-      if(net.role==='host'){ net.seed=(Math.random()*1e9)|0; netSend({t:'hello',name:myHandle(),seed:net.seed,diff:gameDiff,fmt:seriesLen,rank:myRank,handi:handicapOn}); }
-      else { netSend({t:'hello',name:myHandle(),rank:myRank,handi:handicapOn}); }
+      sendHello();
     });
     net.conn.on('data',d=>{ let m; try{m=JSON.parse(d);}catch(e){return;} net.lastSeen=performance.now(); handlePacket(m); });
     net.conn.on('close',()=>{ markDisconnected('player disconnected'); });
   }
-  function netSend(obj){ try{ if(net.conn&&net.conn.open) net.conn.send(JSON.stringify(obj)); }catch(e){} }
+  function netSend(obj){
+    if(isNative()){ try{ nbPlugin().send({data:JSON.stringify(obj)}); }catch(e){} return; }
+    try{ if(net.conn&&net.conn.open) net.conn.send(JSON.stringify(obj)); }catch(e){}
+  }
   function netUIDisconnected(){
     const pill=document.getElementById('netPill'); if(pill) pill.classList.remove('live','connecting');
     const db=document.getElementById('disconnectBtn'); if(db) db.style.display='none';
@@ -698,6 +726,7 @@
   }
   function leaveNet(){
     clearTimeout(net.timer);
+    try{ if(isNative()) nbPlugin().stop(); }catch(e){}
     try{ if(net.conn) net.conn.close(); }catch(e){}
     try{ if(net.peer) net.peer.destroy(); }catch(e){}
     net.conn=null; net.peer=null; net.connected=false; net._ready=false; net.onPacket=null;
@@ -730,12 +759,12 @@
       if(m.rank!=null) net.oppRank=m.rank|0;
       if(m.handi!=null) net.oppHandicap=!!m.handi;
       if(m.seed!=null) net.seed=m.seed;
-      if(m.diff && SWAY[m.diff]){ gameDiff=m.diff; syncDiffUI(); }   // host's difficulty wins
+      if(m.diff && (m.diff in SWAY)){ gameDiff=m.diff; syncDiffUI(); }   // host's difficulty wins (sitter=0 is valid)
       if(m.fmt!=null){ seriesLen=m.fmt; syncFmtUI(); }               // host's format wins
       if(net.role==='host' && net.seed!=null) netSend({t:'seed',seed:net.seed,diff:gameDiff,fmt:seriesLen,rank:tierOf(you.score),handi:handicapOn});
       onConnectedReady();
-    } else if(m.t==='seed'){ net.seed=m.seed; if(m.rank!=null)net.oppRank=m.rank|0; if(m.handi!=null)net.oppHandicap=!!m.handi; if(m.diff&&SWAY[m.diff]){gameDiff=m.diff;syncDiffUI();} if(m.fmt!=null){seriesLen=m.fmt;syncFmtUI();} onConnectedReady(); }
-    else if(m.t==='diff'){ if(SWAY[m.diff]){ gameDiff=m.diff; syncDiffUI(); banner={text:'DIFFICULTY: '+m.diff.toUpperCase(),t:performance.now(),life:1300,color:'#f2c879'}; } }
+    } else if(m.t==='seed'){ net.seed=m.seed; if(m.rank!=null)net.oppRank=m.rank|0; if(m.handi!=null)net.oppHandicap=!!m.handi; if(m.diff&&(m.diff in SWAY)){gameDiff=m.diff;syncDiffUI();} if(m.fmt!=null){seriesLen=m.fmt;syncFmtUI();} onConnectedReady(); }
+    else if(m.t==='diff'){ if(m.diff in SWAY){ gameDiff=m.diff; syncDiffUI(); banner={text:'DIFFICULTY: '+m.diff.toUpperCase(),t:performance.now(),life:1300,color:'#f2c879'}; } }
     else if(m.t==='fmt'){ seriesLen=m.len; syncFmtUI(); banner={text:seriesLen>1?('BEST OF '+seriesLen):'SINGLE GAME',t:performance.now(),life:1300,color:'#f2c879'}; }
     else if(m.t==='handicap'){ net.oppHandicap=!!m.on; syncHud(); toast((net.oppName||'They')+(m.on?' switched their handicap ON':' switched their handicap OFF')); }
     else if(net.onPacket){ net.onPacket(m); }
@@ -1625,7 +1654,7 @@
       } else {
         const wonSeries = series.youW>=need;
         const beforeTier=tierOf(you.score);
-        you.score = wonSeries ? rankUpScore(you.score) : rankDownScore(you.score);
+        you.score = wonSeries ? rankUpScore(you.score) : rankDownScore(you.score); saveRank();
         const afterTier=tierOf(you.score), tname=TIERS[afterTier].name;
         verdict.textContent = wonSeries?'SERIES WON!':'SERIES LOST';
         verdict.className = wonSeries?'verdict win':'verdict lose';
@@ -1640,24 +1669,28 @@
       return;
     }
 
-    // ----- single game (classic conker rule) -----
+    // ----- single game -----
     seriesPending=null; again.textContent='New challenger';
     if(won){
       const before=you.score, bTier=tierOf(before), bMax=maxHpFor(before);
-      if(opponent!=='online') you.score = you.score + foe.score + 1;   // classic rule (offline progression)
+      you.score = (opponent==='online') ? rankUpScore(you.score) : (you.score + foe.score + 1); saveRank();  // online: +1 tier · offline: classic tally
       const aTier=tierOf(you.score), aMax=maxHpFor(you.score);
       verdict.textContent="SMASHED!"; verdict.className="verdict win";
       tauntLine.textContent = TAUNTS[+tauntSel.value];
-      const rankMsg = aTier>bTier
-        ? ` It hardened into a <b style="color:var(--gold)">${TIERS[aTier].name}</b> conker — <b style="color:var(--gold)">+${aMax-bMax} life</b>.`
-        : '';
+      const rankMsg = (opponent==='online')
+        ? (aTier>bTier ? ` Your conker <b style="color:var(--gold)">ranks up</b> to <b style="color:var(--gold)">${TIERS[aTier].name}</b>!` : ` Already a <b style="color:var(--gold)">${TIERS[aTier].name}</b> — top rank.`)
+        : (aTier>bTier ? ` It hardened into a <b style="color:var(--gold)">${TIERS[aTier].name}</b> conker — <b style="color:var(--gold)">+${aMax-bMax} life</b>.` : '');
       sub.innerHTML = opponent==='online'
-        ? `You smashed <b>${foe.name}</b>! Tap <b>New challenger</b> for a rematch.`
+        ? `You smashed <b>${foe.name}</b>!${rankMsg} Tap <b>New challenger</b> to play on.`
         : `Your ${ordName(before)} beat ${ordName(foe.score)} — now it's <b style="color:var(--gold)">${ordName(you.score)}</b>.${rankMsg} It carries that into the next bout.`;
     } else {
+      const before=you.score, bTier=tierOf(before);
+      you.score = rankDownScore(you.score); saveRank();     // a loss deranks one tier (never below the bottom); rank persists otherwise
+      const aTier=tierOf(you.score);
       verdict.textContent="SHATTERED"; verdict.className="verdict lose";
       tauntLine.textContent = `“${foe.name}” chalks up the win.`;
-      sub.innerHTML = `Your conker is done. Read the <b>scar timing</b> next round — hit while it faces you.`;
+      const downMsg = aTier<bTier ? ` Your conker softens down to <b>${TIERS[aTier].name}</b>.` : ` It holds at <b>${TIERS[aTier].name}</b> — can't drop lower.`;
+      sub.innerHTML = `Your conker is done.${downMsg} Read the <b>scar timing</b> next round — strike while it faces you.`;
     }
     over.classList.add('show');
   }
@@ -2449,7 +2482,9 @@
     const online=opponent==='online';
     document.getElementById('lobby').style.display=online?'block':'none';
     document.getElementById('oppNote').textContent=online
-      ? 'Connect a second phone to duel a friend. One phone Hosts, the other Joins.'
+      ? (isNative()
+          ? 'Duel a friend nearby — no internet needed. One phone Hosts, the other taps Join to find it.'
+          : 'Connect a second phone to duel a friend. One phone Hosts, the other Joins.')
       : 'Practice against the computer — play offline, anytime.';
     // tear down any live link when leaving online (or re-entering), then start a clean match
     leaveNet();
@@ -2472,6 +2507,7 @@
   document.getElementById('joinBtn').addEventListener('click',()=>{
     audioUnlock();
     document.getElementById('codeShow').style.display='none';
+    if(isNative()){ document.getElementById('joinRow').style.display='none'; joinGame(); return; }  // Nearby auto-discovers — no code needed
     document.getElementById('joinRow').style.display='block';
   });
   document.getElementById('connectBtn').addEventListener('click',()=>{
