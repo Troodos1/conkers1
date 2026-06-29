@@ -1176,7 +1176,7 @@
     const winTier = won ? tierOf(you.score) : tierOf(foe.score);
     const taunt = pickTaunt(winTier);
     const fireworks = (taunt!=='pee') && (winTier>=3 || taunt==='moon' || taunt==='fistpump' || Math.random()<0.35);
-    const dur = taunt==='pee' ? 3600 : 3000;
+    const dur = taunt==='pee' ? 5200 : 4500;
     victory={ who: won?'you':'foe', tier:winTier, taunt, t0:performance.now(), dur, fireworks, fwNext:0, fw:[],
               loserAt:{x:W*0.5, y:H*0.82} };
     state='celebrate'; if(typeof setTurnTag==='function') setTurnTag(null);
